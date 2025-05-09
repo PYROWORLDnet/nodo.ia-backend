@@ -1,6 +1,8 @@
 const express = require('express');
 const { initDb } = require('./db');
 const { router: queryRoutes } = require('./routes/query');
+const { router: authRoutes } = require('./routes/auth');
+const { router: historyRoutes } = require('./routes/history');
 require('dotenv').config();
 
 // Initialize database
@@ -14,6 +16,8 @@ initDb().then(() => {
   
   // Routes
   app.use('/query', queryRoutes);
+  app.use('/auth', authRoutes);
+  app.use('/history', historyRoutes);
   
   // Basic health check endpoint
   app.get('/health', (req, res) => {
@@ -27,6 +31,8 @@ initDb().then(() => {
       endpoints: {
         '/query': 'POST - Process any natural language query (vehicles or Dominican topics)',
         '/query/clear-cache': 'POST - Clear caches',
+        '/auth': 'Authentication endpoints including Apple Sign In',
+        '/history': 'User search history and favorites (requires authentication)',
         '/health': 'GET - Check API health'
       }
     });
