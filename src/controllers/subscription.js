@@ -69,9 +69,12 @@ const SUBSCRIPTION_PLANS = {
  */
 const getPlans = async (req, res) => {
   try {
+    // If user is authenticated, include their current plan
+    const currentPlan = req.business ? req.business.subscription_tier : 'free';
+    
     return res.json({
       plans: SUBSCRIPTION_PLANS,
-      currentPlan: req.business.subscriptionTier
+      currentPlan
     });
   } catch (error) {
     console.error('Get plans error:', error);
@@ -167,8 +170,26 @@ const createSubscriptionCheckout = async (req, res) => {
 
     const plan = SUBSCRIPTION_PLANS[planId];
 
+    // Validate price ID exists
+    if (!plan.stripePriceId) {
+      console.error(`Missing Stripe Price ID for plan: ${planId}`);
+      return res.status(500).json({ 
+        error: 'Configuration error',
+        message: 'Subscription plans are not properly configured. Please contact support.'
+      });
+    }
+
+    // Validate price ID format
+    if (!plan.stripePriceId.startsWith('price_')) {
+      console.error(`Invalid Stripe Price ID format for plan: ${planId}`);
+      return res.status(500).json({ 
+        error: 'Configuration error',
+        message: 'Invalid price configuration. Please contact support.'
+      });
+    }
+
     // Create or get Stripe customer
-    let stripeCustomerId = req.business.stripeCustomerId;
+    let stripeCustomerId = req.business.stripe_customer_id;
     if (!stripeCustomerId) {
       const customer = await stripe.customers.create({
         email: req.business.email,
@@ -177,8 +198,10 @@ const createSubscriptionCheckout = async (req, res) => {
         }
       });
       stripeCustomerId = customer.id;
-      await req.business.update({ stripeCustomerId });
+      await req.business.update({ stripe_customer_id: stripeCustomerId });
     }
+
+    console.log(`Creating checkout session for plan ${planId} with price ID ${plan.stripePriceId}`);
 
     // Create checkout session
     const session = await stripe.checkout.sessions.create({
@@ -199,7 +222,20 @@ const createSubscriptionCheckout = async (req, res) => {
     return res.json({ url: session.url });
   } catch (error) {
     console.error('Create subscription checkout error:', error);
-    return res.status(500).json({ error: 'Failed to create checkout session' });
+    
+    // Handle specific Stripe errors
+    if (error.type === 'StripeInvalidRequestError') {
+      return res.status(400).json({ 
+        error: 'Invalid request',
+        message: 'Could not create subscription. Please check plan configuration.',
+        details: error.message
+      });
+    }
+    
+    return res.status(500).json({ 
+      error: 'Failed to create checkout session',
+      message: 'An error occurred while setting up the subscription.'
+    });
   }
 };
 

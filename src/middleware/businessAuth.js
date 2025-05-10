@@ -235,6 +235,39 @@ async function checkListingLimit(req, res, next) {
   }
 }
 
+const verifyToken = async (token) => {
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const business = await Business.findByPk(decoded.id);
+    if (!business) {
+      throw new Error('Business not found');
+    }
+    return business;
+  } catch (error) {
+    throw error;
+  }
+};
+
+const optionalAuth = async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.split(' ')[1];
+      try {
+        const business = await verifyToken(token);
+        req.business = business;
+      } catch (error) {
+        // Ignore token verification errors in optional auth
+        console.log('Optional auth token invalid:', error.message);
+      }
+    }
+    next();
+  } catch (error) {
+    console.error('Optional auth error:', error);
+    next();
+  }
+};
+
 module.exports = {
   businessAuthMiddleware,
   requireVerifiedBusiness,
@@ -244,5 +277,6 @@ module.exports = {
   requireTeamManagement,
   requireSubscriptionManagement,
   requireProductManagement,
-  checkListingLimit
+  checkListingLimit,
+  optionalAuth
 }; 

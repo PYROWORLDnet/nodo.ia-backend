@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { businessAuthMiddleware } = require('../middleware/businessAuth');
+const { businessAuthMiddleware, optionalAuth } = require('../middleware/businessAuth');
 const {
   getPlans,
   getCurrentSubscription,
@@ -11,8 +11,8 @@ const {
   changePlan
 } = require('../controllers/subscription');
 
-// Public routes
-router.get('/plans', getPlans);
+// Public routes with optional authentication
+router.get('/plans', optionalAuth, getPlans);
 
 // Protected routes
 router.use(businessAuthMiddleware);
