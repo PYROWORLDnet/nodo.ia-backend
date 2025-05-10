@@ -1,0 +1,194 @@
+{
+  "info": {
+    "name": "Subscription API",
+    "description": "Collection for testing the subscription management API endpoints",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Get Available Plans",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/subscription/plans",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "subscription", "plans"]
+        },
+        "description": "Get all available subscription plans"
+      }
+    },
+    {
+      "name": "Get Current Subscription",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{authToken}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/subscription/current",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "subscription", "current"]
+        },
+        "description": "Get the current subscription details for the authenticated business"
+      }
+    },
+    {
+      "name": "Get Subscription History",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{authToken}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/subscription/history",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "subscription", "history"]
+        },
+        "description": "Get the subscription transaction history"
+      }
+    },
+    {
+      "name": "Create Subscription Checkout (Smart Plan)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{authToken}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"planId\": \"smart\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/subscription/checkout",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "subscription", "checkout"]
+        },
+        "description": "Create a checkout session for the Smart plan subscription"
+      }
+    },
+    {
+      "name": "Create Subscription Checkout (Pro Plan)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{authToken}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"planId\": \"pro\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/subscription/checkout",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "subscription", "checkout"]
+        },
+        "description": "Create a checkout session for the Pro plan subscription"
+      }
+    },
+    {
+      "name": "Cancel Current Subscription",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{authToken}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/subscription/cancel",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "subscription", "cancel"]
+        },
+        "description": "Cancel the current active subscription"
+      }
+    },
+    {
+      "name": "Reactivate Cancelled Subscription",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{authToken}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/subscription/reactivate",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "subscription", "reactivate"]
+        },
+        "description": "Reactivate a previously cancelled subscription"
+      }
+    },
+    {
+      "name": "Change Subscription Plan",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{authToken}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"newPlanId\": \"pro\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/subscription/change-plan",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "subscription", "change-plan"]
+        },
+        "description": "Change the current subscription plan"
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "authToken",
+      "value": "your_auth_token_here",
+      "type": "string"
+    }
+  ]
+} 

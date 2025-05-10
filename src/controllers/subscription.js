@@ -1,4 +1,6 @@
-const { Business, Subscription, Transaction } = require('../db');
+const { Business, Subscription, Transaction } = require('../db/init');
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const { Op } = require('sequelize');
 const { 
   createCheckoutSession, 
   cancelSubscription, 
@@ -9,277 +11,309 @@ const {
 const { subscriptionConfirmationEmail } = require('../utils/emailTemplates');
 const { sendEmail } = require('../utils/emailService');
 
+// Subscription plan configurations
+const SUBSCRIPTION_PLANS = {
+  free: {
+    name: 'Free Plan',
+    price: 0,
+    features: [
+      'Basic business profile',
+      'Up to 3 listings',
+      'Basic analytics'
+    ],
+    limits: {
+      listings: 3,
+      highlightCredits: 0,
+      patchColor: 'grey'
+    }
+  },
+  smart: {
+    name: 'Smart Plan',
+    price: 29.99,
+    stripePriceId: process.env.STRIPE_SMART_PRICE_ID,
+    features: [
+      'Everything in Free',
+      'Up to 10 listings',
+      'Advanced analytics',
+      '5 highlight credits/month',
+      'Priority support'
+    ],
+    limits: {
+      listings: 10,
+      highlightCredits: 5,
+      patchColor: 'blue'
+    }
+  },
+  pro: {
+    name: 'Pro Plan',
+    price: 99.99,
+    stripePriceId: process.env.STRIPE_PRO_PRICE_ID,
+    features: [
+      'Everything in Smart',
+      'Unlimited listings',
+      'Full analytics suite',
+      '20 highlight credits/month',
+      'Premium support',
+      'Custom branding'
+    ],
+    limits: {
+      listings: -1, // unlimited
+      highlightCredits: 20,
+      patchColor: 'gold'
+    }
+  }
+};
+
 /**
  * Get available subscription plans
  */
-async function getPlans(req, res) {
+const getPlans = async (req, res) => {
   try {
-    const plans = getSubscriptionPlans();
-    return res.status(200).json({ plans });
+    return res.json({
+      plans: SUBSCRIPTION_PLANS,
+      currentPlan: req.business.subscriptionTier
+    });
   } catch (error) {
     console.error('Get plans error:', error);
     return res.status(500).json({ error: 'Failed to get subscription plans' });
   }
-}
+};
 
 /**
  * Get current subscription
  */
-async function getCurrentSubscription(req, res) {
+const getCurrentSubscription = async (req, res) => {
   try {
-    const { business } = req;
-
-    // Get active subscription
     const subscription = await Subscription.findOne({
       where: {
-        businessId: business.id,
-        status: 'active'
-      },
-      order: [['createdAt', 'DESC']]
+        business_id: req.business.id,
+        status: { [Op.in]: ['active', 'trialing', 'past_due'] }
+      }
     });
 
-    return res.status(200).json({
-      subscription: subscription || null,
-      currentTier: business.subscriptionTier
+    if (!subscription) {
+      return res.json({
+        subscription: {
+          tier: 'free',
+          status: 'active',
+          features: SUBSCRIPTION_PLANS.free.features,
+          limits: SUBSCRIPTION_PLANS.free.limits
+        }
+      });
+    }
+
+    // If subscription exists in Stripe, get additional details
+    let stripeSubscription = null;
+    if (subscription.stripeSubscriptionId) {
+      try {
+        stripeSubscription = await stripe.subscriptions.retrieve(subscription.stripeSubscriptionId);
+      } catch (stripeError) {
+        console.error('Stripe subscription retrieval error:', stripeError);
+      }
+    }
+
+    return res.json({
+      subscription: {
+        id: subscription.id,
+        tier: subscription.tier,
+        status: subscription.status,
+        features: SUBSCRIPTION_PLANS[subscription.tier].features,
+        limits: SUBSCRIPTION_PLANS[subscription.tier].limits,
+        stripeDetails: stripeSubscription ? {
+          currentPeriodEnd: new Date(stripeSubscription.current_period_end * 1000),
+          cancelAtPeriodEnd: stripeSubscription.cancel_at_period_end
+        } : null
+      }
     });
   } catch (error) {
     console.error('Get current subscription error:', error);
     return res.status(500).json({ error: 'Failed to get current subscription' });
   }
-}
+};
 
 /**
  * Get subscription history
  */
-async function getSubscriptionHistory(req, res) {
+const getSubscriptionHistory = async (req, res) => {
   try {
-    const { business } = req;
-
-    // Get all subscriptions
-    const subscriptions = await Subscription.findAll({
+    const transactions = await Transaction.findAll({
       where: {
-        businessId: business.id
+        business_id: req.business.id
       },
-      order: [['createdAt', 'DESC']]
+      order: [['created_at', 'DESC']],
+      include: [{
+        model: Subscription,
+        as: 'subscription'
+      }]
     });
 
-    return res.status(200).json({ subscriptions });
+    return res.json({ transactions });
   } catch (error) {
     console.error('Get subscription history error:', error);
     return res.status(500).json({ error: 'Failed to get subscription history' });
   }
-}
+};
 
 /**
- * Create checkout session for subscription
+ * Create subscription checkout session
  */
-async function createSubscriptionCheckout(req, res) {
+const createSubscriptionCheckout = async (req, res) => {
   try {
-    const { business } = req;
-    const { planId, successUrl, cancelUrl } = req.body;
+    const { planId } = req.body;
 
-    if (!planId || !successUrl || !cancelUrl) {
-      return res.status(400).json({ error: 'Plan ID, success URL, and cancel URL are required' });
+    if (!['smart', 'pro'].includes(planId)) {
+      return res.status(400).json({ error: 'Invalid plan selected' });
+    }
+
+    const plan = SUBSCRIPTION_PLANS[planId];
+
+    // Create or get Stripe customer
+    let stripeCustomerId = req.business.stripeCustomerId;
+    if (!stripeCustomerId) {
+      const customer = await stripe.customers.create({
+        email: req.business.email,
+        metadata: {
+          businessId: req.business.id
+        }
+      });
+      stripeCustomerId = customer.id;
+      await req.business.update({ stripeCustomerId });
     }
 
     // Create checkout session
-    const session = await createCheckoutSession({
-      customer: business.stripeCustomerId,
-      planId,
-      businessId: business.id,
-      successUrl,
-      cancelUrl,
-      type: 'subscription'
+    const session = await stripe.checkout.sessions.create({
+      customer: stripeCustomerId,
+      line_items: [{
+        price: plan.stripePriceId,
+        quantity: 1,
+      }],
+      mode: 'subscription',
+      success_url: `${process.env.FRONTEND_URL}/dashboard/subscription/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${process.env.FRONTEND_URL}/dashboard/subscription/cancel`,
+      metadata: {
+        businessId: req.business.id,
+        planId: planId
+      }
     });
 
-    return res.status(200).json({ sessionId: session.id, url: session.url });
+    return res.json({ url: session.url });
   } catch (error) {
     console.error('Create subscription checkout error:', error);
     return res.status(500).json({ error: 'Failed to create checkout session' });
   }
-}
+};
 
 /**
- * Cancel subscription
+ * Cancel current subscription
  */
-async function cancelCurrentSubscription(req, res) {
+const cancelCurrentSubscription = async (req, res) => {
   try {
-    const { business } = req;
-    const { reason } = req.body;
-
-    // Get active subscription
     const subscription = await Subscription.findOne({
       where: {
-        businessId: business.id,
+        business_id: req.business.id,
         status: 'active'
       }
     });
 
-    if (!subscription) {
+    if (!subscription || !subscription.stripeSubscriptionId) {
       return res.status(404).json({ error: 'No active subscription found' });
     }
 
-    // Cancel subscription in Stripe
-    await cancelSubscription(subscription.stripeSubscriptionId);
+    // Cancel at period end in Stripe
+    await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
+      cancel_at_period_end: true
+    });
 
-    // Update subscription
+    // Update local subscription status
     await subscription.update({
-      status: 'cancelled',
-      cancellationReason: reason,
-      cancelledAt: new Date()
+      status: 'canceled'
     });
 
-    // Update business tier to free
-    await business.update({
-      subscriptionTier: 'free'
-    });
-
-    return res.status(200).json({
-      message: 'Subscription cancelled successfully',
-      effectiveDate: subscription.currentPeriodEnd
-    });
+    return res.json({ message: 'Subscription cancelled successfully' });
   } catch (error) {
     console.error('Cancel subscription error:', error);
     return res.status(500).json({ error: 'Failed to cancel subscription' });
   }
-}
+};
 
 /**
  * Reactivate cancelled subscription
  */
-async function reactivateCancelledSubscription(req, res) {
+const reactivateCancelledSubscription = async (req, res) => {
   try {
-    const { business } = req;
-
-    // Get most recent cancelled subscription
     const subscription = await Subscription.findOne({
       where: {
-        businessId: business.id,
-        status: 'cancelled'
-      },
-      order: [['cancelledAt', 'DESC']]
+        business_id: req.business.id,
+        status: 'canceled'
+      }
     });
 
-    if (!subscription) {
+    if (!subscription || !subscription.stripeSubscriptionId) {
       return res.status(404).json({ error: 'No cancelled subscription found' });
     }
 
-    // Check if subscription is still within current period
-    if (new Date() > new Date(subscription.currentPeriodEnd)) {
-      return res.status(400).json({ 
-        error: 'Subscription period has ended. Please purchase a new subscription.' 
-      });
-    }
+    // Reactivate in Stripe
+    await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
+      cancel_at_period_end: false
+    });
 
-    // Reactivate subscription in Stripe
-    await reactivateStripeSubscription(subscription.stripeSubscriptionId);
-
-    // Update subscription
+    // Update local subscription status
     await subscription.update({
-      status: 'active',
-      cancellationReason: null,
-      cancelledAt: null
+      status: 'active'
     });
 
-    // Update business tier
-    await business.update({
-      subscriptionTier: subscription.planId
-    });
-
-    return res.status(200).json({
-      message: 'Subscription reactivated successfully',
-      subscription: {
-        id: subscription.id,
-        planId: subscription.planId,
-        status: 'active',
-        currentPeriodEnd: subscription.currentPeriodEnd
-      }
-    });
+    return res.json({ message: 'Subscription reactivated successfully' });
   } catch (error) {
     console.error('Reactivate subscription error:', error);
     return res.status(500).json({ error: 'Failed to reactivate subscription' });
   }
-}
+};
 
 /**
  * Change subscription plan
  */
-async function changePlan(req, res) {
+const changePlan = async (req, res) => {
   try {
-    const { business } = req;
     const { newPlanId } = req.body;
 
-    if (!newPlanId) {
-      return res.status(400).json({ error: 'New plan ID is required' });
+    if (!['smart', 'pro'].includes(newPlanId)) {
+      return res.status(400).json({ error: 'Invalid plan selected' });
     }
 
-    // Get active subscription
     const subscription = await Subscription.findOne({
       where: {
-        businessId: business.id,
+        business_id: req.business.id,
         status: 'active'
       }
     });
 
-    if (!subscription) {
+    if (!subscription || !subscription.stripeSubscriptionId) {
       return res.status(404).json({ error: 'No active subscription found' });
     }
 
-    // Change subscription plan in Stripe
-    const result = await changeSubscriptionPlan(
-      subscription.stripeSubscriptionId, 
-      newPlanId
-    );
+    // Update subscription in Stripe
+    await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
+      items: [{
+        id: subscription.stripeSubscriptionId,
+        price: SUBSCRIPTION_PLANS[newPlanId].stripePriceId
+      }],
+      proration_behavior: 'always_invoice'
+    });
 
-    // Update subscription
+    // Update local subscription
     await subscription.update({
-      planId: newPlanId,
-      amount: result.amount,
-      currentPeriodEnd: new Date(result.currentPeriodEnd * 1000) // Convert from Unix timestamp
+      tier: newPlanId
     });
 
-    // Update business tier
-    await business.update({
-      subscriptionTier: newPlanId
-    });
-
-    // Record transaction
-    await Transaction.create({
-      businessId: business.id,
-      type: 'subscription_change',
-      status: 'completed',
-      amount: result.prorationAmount || 0,
-      currency: 'usd',
-      stripePaymentIntentId: result.paymentIntentId,
-      metadata: {
-        oldPlanId: subscription.planId,
-        newPlanId
-      }
-    });
-
-    // Send confirmation email
-    await sendEmail(business.email, subscriptionConfirmationEmail({
-      businessName: business.name,
-      planName: newPlanId.charAt(0).toUpperCase() + newPlanId.slice(1) + ' Plan',
-      amount: (result.amount / 100).toFixed(2),
-      startDate: new Date().toLocaleDateString(),
-      nextBillingDate: new Date(result.currentPeriodEnd * 1000).toLocaleDateString()
-    }));
-
-    return res.status(200).json({
-      message: 'Subscription plan changed successfully',
-      subscription: {
-        id: subscription.id,
-        planId: newPlanId,
-        amount: result.amount,
-        currentPeriodEnd: new Date(result.currentPeriodEnd * 1000)
-      }
+    return res.json({ 
+      message: 'Subscription plan updated successfully',
+      newPlan: SUBSCRIPTION_PLANS[newPlanId]
     });
   } catch (error) {
-    console.error('Change subscription plan error:', error);
+    console.error('Change plan error:', error);
     return res.status(500).json({ error: 'Failed to change subscription plan' });
   }
-}
+};
 
 module.exports = {
   getPlans,

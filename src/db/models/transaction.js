@@ -1,119 +1,74 @@
 const { DataTypes } = require('sequelize');
+const { sequelize } = require('../index');
 
-module.exports = (sequelize) => {
-  const Transaction = sequelize.define('Transaction', {
-    id: {
-      type: DataTypes.UUID,
-      defaultValue: DataTypes.UUIDV4,
-      primaryKey: true,
-    },
-    businessId: {
-      type: DataTypes.UUID,
-      allowNull: false,
-      references: {
-        model: 'Businesses',
-        key: 'id',
-      },
-    },
-    stripePaymentIntentId: {
-      type: DataTypes.STRING,
-      allowNull: true,
-    },
-    stripeInvoiceId: {
-      type: DataTypes.STRING,
-      allowNull: true,
-    },
-    subscriptionId: {
-      type: DataTypes.UUID,
-      allowNull: true,
-      references: {
-        model: 'Subscriptions',
-        key: 'id',
-      },
-    },
-    type: {
-      type: DataTypes.ENUM(
-        'subscription_new', 
-        'subscription_renewal', 
-        'subscription_change',
-        'credit_purchase', 
-        'refund', 
-        'other'
-      ),
-      allowNull: false,
-    },
-    status: {
-      type: DataTypes.ENUM('pending', 'completed', 'failed', 'refunded'),
-      defaultValue: 'pending',
-    },
-    amount: {
-      type: DataTypes.DECIMAL(10, 2),
-      allowNull: false,
-    },
-    currency: {
-      type: DataTypes.STRING,
-      defaultValue: 'USD',
-    },
-    description: {
-      type: DataTypes.TEXT,
-      allowNull: true,
-    },
-    metadata: {
-      type: DataTypes.JSONB,
-      allowNull: true,
-    },
-    receiptUrl: {
-      type: DataTypes.STRING,
-      allowNull: true,
-    },
-    paymentMethod: {
-      type: DataTypes.STRING,
-      allowNull: true,
-    },
-    highlightCredits: {
-      type: DataTypes.INTEGER,
-      allowNull: true,
-    },
-    discountApplied: {
-      type: DataTypes.BOOLEAN,
-      defaultValue: false,
-    },
-    discountPercentage: {
-      type: DataTypes.INTEGER,
-      defaultValue: 0,
-    },
-    originalAmount: {
-      type: DataTypes.DECIMAL(10, 2),
-      allowNull: true,
-    },
-    isBulkPurchase: {
-      type: DataTypes.BOOLEAN,
-      defaultValue: false,
-    },
-    invoiceNumber: {
-      type: DataTypes.STRING,
-      allowNull: true,
-    },
-  }, {
-    timestamps: true,
-    indexes: [
-      {
-        fields: ['businessId']
-      },
-      {
-        fields: ['subscriptionId']
-      },
-      {
-        fields: ['type']
-      },
-      {
-        fields: ['status']
-      },
-      {
-        fields: ['stripePaymentIntentId']
-      }
-    ]
-  });
+const Transaction = sequelize.define('Transaction', {
+  id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    primaryKey: true
+  },
+  business_id: {
+    type: DataTypes.UUID,
+    allowNull: false,
+    references: {
+      model: 'businesses',
+      key: 'id'
+    }
+  },
+  subscription_id: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    references: {
+      model: 'subscriptions',
+      key: 'id'
+    }
+  },
+  type: {
+    type: DataTypes.ENUM('subscription_new', 'subscription_renewal', 'subscription_change', 'subscription_cancel'),
+    allowNull: false
+  },
+  amount: {
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: false
+  },
+  currency: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    defaultValue: 'USD'
+  },
+  status: {
+    type: DataTypes.ENUM('pending', 'completed', 'failed', 'refunded'),
+    allowNull: false,
+    defaultValue: 'pending'
+  },
+  stripe_payment_intent_id: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  stripe_invoice_id: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  metadata: {
+    type: DataTypes.JSONB,
+    allowNull: true
+  },
+  created_at: {
+    type: DataTypes.DATE,
+    allowNull: false,
+    defaultValue: DataTypes.NOW
+  },
+  updated_at: {
+    type: DataTypes.DATE,
+    allowNull: false,
+    defaultValue: DataTypes.NOW
+  }
+}, {
+  tableName: 'transactions',
+  underscored: true,
+  timestamps: true,
+  createdAt: 'created_at',
+  updatedAt: 'updated_at'
+});
 
-  return Transaction;
-}; 
+module.exports = Transaction; 

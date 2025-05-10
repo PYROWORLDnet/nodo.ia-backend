@@ -43,7 +43,7 @@ const generateBusinessToken = (business, teamMember = null) => {
 
 // Generate verification token
 const generateVerificationToken = () => {
-  return crypto.randomBytes(32).toString('hex');
+  return crypto.randomBytes(16).toString('hex');
 };
 
 // Generate password reset token
