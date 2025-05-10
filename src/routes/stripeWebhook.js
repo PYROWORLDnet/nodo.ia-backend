@@ -1,10 +1,7 @@
 const express = require('express');
 const router = express.Router();
-
+const { handleWebhook } = require('../controllers/webhookHandler');
 // Raw body middleware for Stripe webhooks
-router.post('/', express.raw({ type: 'application/json' }), (req, res) => {
-  // Placeholder for actual webhook handling - will be implemented later
-  res.status(501).json({ message: 'Stripe webhook handling not implemented yet' });
-});
+router.post('/', express.raw({ type: 'application/json' }), handleWebhook);
 
 module.exports = router; 

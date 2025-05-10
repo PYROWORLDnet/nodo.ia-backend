@@ -186,6 +186,7 @@ const handleCustomerCreated = async (customer) => {
 
 const handleWebhook = async (req, res) => {
   let event;
+  console.log('Received Stripe webhook request:', req.body);
 
   try {
     // Get the signature from headers
