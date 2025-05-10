@@ -186,30 +186,30 @@ const handleCustomerCreated = async (customer) => {
 
 const handleWebhook = async (req, res) => {
   let event;
-  console.log('Received Stripe webhook request:', req.body);
-
+  console.log('Received Stripe webhook request');
+  
   try {
-    // Get the signature from headers
-    const signature = req.headers['stripe-signature'];
+    const sig = req.headers['stripe-signature'];
     
-    if (!signature) {
-      console.error('No Stripe signature found in webhook request');
-      return res.status(400).json({ error: 'Missing stripe-signature header' });
+    // Since we're using express.raw(), the body will be a Buffer
+    const payload = req.body;
+    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+    
+    if (!webhookSecret) {
+      throw new Error('Missing Stripe webhook secret. Please set STRIPE_WEBHOOK_SECRET environment variable.');
     }
 
-    try {
-      // Verify the event
-      event = stripe.webhooks.constructEvent(
-        req.body,
-        signature,
-        process.env.STRIPE_WEBHOOK_SECRET
-      );
-    } catch (err) {
-      console.error('Webhook signature verification failed:', err.message);
-      return res.status(400).json({ error: `Webhook Error: ${err.message}` });
+    if (!sig) {
+      throw new Error('No Stripe signature found in headers');
     }
 
-    console.log('Received Stripe webhook event:', event.type);
+    event = stripe.webhooks.constructEvent(
+      payload,
+      sig,
+      webhookSecret
+    );
+    
+    console.log('Webhook signature verified. Processing event:', event.type);
 
     // Handle the event
     switch (event.type) {
