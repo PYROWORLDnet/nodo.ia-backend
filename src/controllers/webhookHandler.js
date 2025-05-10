@@ -37,6 +37,7 @@ const handleSubscriptionCreated = async (subscription) => {
     });
   } catch (error) {
     console.error('Error handling subscription created:', error);
+    throw error; // Rethrow to be caught by main handler
   }
 };
 
@@ -63,6 +64,7 @@ const handleSubscriptionUpdated = async (subscription) => {
     }
   } catch (error) {
     console.error('Error handling subscription updated:', error);
+    throw error;
   }
 };
 
@@ -102,6 +104,7 @@ const handleSubscriptionDeleted = async (subscription) => {
     }
   } catch (error) {
     console.error('Error handling subscription deleted:', error);
+    throw error;
   }
 };
 
@@ -129,6 +132,7 @@ const handleInvoicePaid = async (invoice) => {
     }
   } catch (error) {
     console.error('Error handling invoice paid:', error);
+    throw error;
   }
 };
 
@@ -161,26 +165,56 @@ const handleInvoicePaymentFailed = async (invoice) => {
     }
   } catch (error) {
     console.error('Error handling invoice payment failed:', error);
+    throw error;
+  }
+};
+
+const handleCustomerCreated = async (customer) => {
+  try {
+    const { metadata } = customer;
+    if (metadata && metadata.businessId) {
+      await Business.update(
+        { stripe_customer_id: customer.id },
+        { where: { id: metadata.businessId } }
+      );
+    }
+  } catch (error) {
+    console.error('Error handling customer created:', error);
+    throw error;
   }
 };
 
 const handleWebhook = async (req, res) => {
-  const sig = req.headers['stripe-signature'];
   let event;
 
   try {
-    event = stripe.webhooks.constructEvent(
-      req.rawBody,
-      sig,
-      process.env.STRIPE_WEBHOOK_SECRET
-    );
-  } catch (err) {
-    console.error('Webhook signature verification failed:', err.message);
-    return res.status(400).send(`Webhook Error: ${err.message}`);
-  }
+    // Get the signature from headers
+    const signature = req.headers['stripe-signature'];
+    
+    if (!signature) {
+      console.error('No Stripe signature found in webhook request');
+      return res.status(400).json({ error: 'Missing stripe-signature header' });
+    }
 
-  try {
+    try {
+      // Verify the event
+      event = stripe.webhooks.constructEvent(
+        req.body,
+        signature,
+        process.env.STRIPE_WEBHOOK_SECRET
+      );
+    } catch (err) {
+      console.error('Webhook signature verification failed:', err.message);
+      return res.status(400).json({ error: `Webhook Error: ${err.message}` });
+    }
+
+    console.log('Received Stripe webhook event:', event.type);
+
+    // Handle the event
     switch (event.type) {
+      case 'customer.created':
+        await handleCustomerCreated(event.data.object);
+        break;
       case 'customer.subscription.created':
         await handleSubscriptionCreated(event.data.object);
         break;
@@ -196,12 +230,18 @@ const handleWebhook = async (req, res) => {
       case 'invoice.payment_failed':
         await handleInvoicePaymentFailed(event.data.object);
         break;
+      default:
+        console.log(`Unhandled event type: ${event.type}`);
     }
 
-    res.json({ received: true });
+    // Return a 200 response to acknowledge receipt of the event
+    res.json({ received: true, type: event.type });
   } catch (error) {
-    console.error('Error handling webhook event:', error);
-    res.status(500).json({ error: 'Webhook handler failed' });
+    console.error('Error handling webhook:', error);
+    res.status(500).json({ 
+      error: 'Webhook handler failed',
+      message: error.message 
+    });
   }
 };
 

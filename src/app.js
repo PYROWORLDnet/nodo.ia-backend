@@ -19,7 +19,6 @@ if (process.env.NODE_ENV === 'production') {
   app.set('trust proxy', 1);
 }
 
-// Stripe webhook route must be registered before body parser middleware
 app.use('/api/webhooks/stripe', stripeWebhookRoutes);
 
 // Middleware
@@ -58,20 +57,10 @@ app.use('/api', routes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error(err.stack);
-  
-  const statusCode = err.statusCode || 500;
-  const message = err.message || 'Internal Server Error';
-  
-  // Don't leak error details in production
-  const error = process.env.NODE_ENV === 'production' && statusCode === 500
-    ? 'Internal Server Error'
-    : err.message;
-  
-  res.status(statusCode).json({
-    error: error,
-    status: statusCode,
-    ...(process.env.NODE_ENV !== 'production' && { stack: err.stack })
+  console.error('Unhandled error:', err);
+  res.status(500).json({
+    error: 'Internal Server Error',
+    message: process.env.NODE_ENV === 'development' ? err.message : 'An unexpected error occurred'
   });
 });
 
