@@ -6,7 +6,8 @@ const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
-const { initDb } = require('./db');
+const { initializeDatabase } = require('./db/init');
+const { verifyEmailConfig } = require('./utils/emailService');
 const routes = require('./routes');
 const stripeWebhookRoutes = require('./routes/stripeWebhook');
 
@@ -42,8 +43,14 @@ app.use('/api/', limiter);
 app.use(compression());
 
 // Health check endpoint
-app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'OK', timestamp: new Date().toISOString() });
+app.get('/health', async (req, res) => {
+  try {
+    // Check database connection
+    await require('./db').sequelize.authenticate();
+    res.json({ status: 'healthy', database: 'connected' });
+  } catch (error) {
+    res.status(503).json({ status: 'unhealthy', database: 'disconnected', error: error.message });
+  }
 });
 
 // Register routes
@@ -69,24 +76,36 @@ app.use((err, req, res, next) => {
 });
 
 // 404 handler
-app.use((req, res, next) => {
+app.use((req, res) => {
   res.status(404).json({ 
     error: 'Not Found',
     message: `Route ${req.method} ${req.url} not found`
   });
 });
 
-// Initialize app with database connection
+// Initialize app
 async function initApp() {
   try {
     // Initialize database
-    await initDb();
-    console.log('Database initialized successfully');
+    await initializeDatabase().catch(error => {
+      console.error('Database initialization failed:', error);
+      // Don't throw error, let the app continue trying to start
+    });
+    
+    // Start verifying email configuration in the background
+    verifyEmailConfig().catch(error => {
+      console.error('Email configuration verification failed:', error);
+      // Don't throw error, let the app continue running
+    });
+    
     return app;
   } catch (error) {
-    console.error('Database initialization failed:', error);
-    throw error;
+    console.error('Failed to initialize app:', error);
+    // Don't throw error, return app anyway to allow for graceful handling
+    return app;
   }
 }
 
-module.exports = { app, initApp }; 
+module.exports = {
+  initApp
+}; 

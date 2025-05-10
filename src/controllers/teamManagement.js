@@ -1,9 +1,10 @@
-const { Business, TeamMember } = require('../db');
+const { Business, TeamMember } = require('../db/init');
 const { 
   generateTeamInvitationToken, 
   hashPassword, 
   generateSessionId, 
-  generateBusinessToken
+  generateBusinessToken,
+  comparePassword
 } = require('../utils/businessAuth');
 const { teamMemberInvitationEmail } = require('../utils/emailTemplates');
 const { sendEmail } = require('../utils/emailService');
@@ -14,10 +15,20 @@ const { Op } = require('sequelize');
  */
 async function inviteTeamMember(req, res) {
   try {
-    const { business } = req;
+    // Log the incoming request data
+    console.log('Invite team member request:', {
+      businessFromReq: req.business,
+      body: req.body
+    });
+
+    if (!req.business || !req.business.id) {
+      return res.status(401).json({ error: 'Business authentication required' });
+    }
+
     const { 
       email, 
-      name, 
+      firstName,
+      lastName,
       role, 
       canManageTeam = false, 
       canManageSubscription = false, 
@@ -26,16 +37,29 @@ async function inviteTeamMember(req, res) {
     } = req.body;
 
     // Validate required fields
-    if (!email || !name || !role) {
-      return res.status(400).json({ error: 'Email, name and role are required' });
+    if (!email || !firstName || !lastName || !role) {
+      return res.status(400).json({ error: 'Email, firstName, lastName and role are required' });
     }
 
-    // Check if email is already a team member
+    // Verify business exists
+    const existingBusiness = await Business.findOne({
+      where: { 
+        id: req.business.id,
+        status: 'active' // Only allow active businesses to invite team members
+      }
+    });
+
+    if (!existingBusiness) {
+      console.error('Business not found or not active:', req.business.id);
+      return res.status(404).json({ error: 'Business not found or not active' });
+    }
+
+    // Check if email is already a team member (active or invited)
     const existingMember = await TeamMember.findOne({ 
       where: { 
-        businessId: business.id, 
+        businessId: existingBusiness.id, 
         email,
-        status: { [Op.ne]: 'removed' }
+        status: { [Op.in]: ['active', 'invited', 'pending'] }
       } 
     });
 
@@ -45,29 +69,42 @@ async function inviteTeamMember(req, res) {
 
     // Generate invitation token
     const invitationToken = generateTeamInvitationToken();
-    const invitationTokenExpires = new Date();
-    invitationTokenExpires.setDate(invitationTokenExpires.getDate() + 7); // 7 days
+    const invitationExpires = new Date();
+    invitationExpires.setDate(invitationExpires.getDate() + 7); // 7 days
+
+    // Generate a temporary password hash (will be replaced when user accepts invitation)
+    const temporaryPassword = generateTeamInvitationToken(); // Using this to generate a random string
+    const temporaryPasswordHash = await hashPassword(temporaryPassword);
 
     // Create team member
     const teamMember = await TeamMember.create({
-      businessId: business.id,
+      businessId: existingBusiness.id,
       email,
-      name,
+      firstName,
+      lastName,
       role,
       canManageTeam,
       canManageSubscription,
       canManageProducts,
       canViewAnalytics,
       invitationToken,
-      invitationTokenExpires,
-      status: 'invited'
+      invitationExpires,
+      status: 'invited',
+      passwordHash: temporaryPasswordHash // Set temporary password hash
+    });
+
+    // Log successful creation
+    console.log('Team member created:', {
+      id: teamMember.id,
+      email: teamMember.email,
+      businessId: teamMember.businessId
     });
 
     // Send invitation email
     await sendEmail(email, teamMemberInvitationEmail({
-      businessName: business.name,
-      teamMemberName: name,
-      inviterName: business.ownerName,
+      businessName: existingBusiness.name,
+      teamMemberName: `${firstName} ${lastName}`,
+      inviterName: existingBusiness.ownerName,
       role,
       invitationUrl: `${process.env.FRONTEND_URL}/team/accept-invitation?token=${invitationToken}`
     }));
@@ -77,15 +114,22 @@ async function inviteTeamMember(req, res) {
       teamMember: {
         id: teamMember.id,
         email: teamMember.email,
-        name: teamMember.name,
+        firstName: teamMember.firstName,
+        lastName: teamMember.lastName,
         role: teamMember.role,
         status: teamMember.status,
         createdAt: teamMember.createdAt
       }
     });
   } catch (error) {
-    console.error('Invite team member error:', error);
-    return res.status(500).json({ error: 'Failed to invite team member' });
+    console.error('Invite team member error:', {
+      error: error.message,
+      stack: error.stack,
+      details: error.parent?.detail,
+      sql: error.sql,
+      parameters: error.parameters
+    });
+    return res.status(500).json({ error: 'Failed to invite team member. Please try again.' });
   }
 }
 
@@ -104,10 +148,13 @@ async function acceptInvitation(req, res) {
     const teamMember = await TeamMember.findOne({
       where: {
         invitationToken: token,
-        invitationTokenExpires: { [Op.gt]: new Date() },
+        invitationExpires: { [Op.gt]: new Date() },
         status: 'invited'
       },
-      include: [{ model: Business }]
+      include: [{ 
+        model: Business,
+        as: 'business'
+      }]
     });
 
     if (!teamMember) {
@@ -122,26 +169,27 @@ async function acceptInvitation(req, res) {
 
     // Update team member
     await teamMember.update({
-      password: hashedPassword,
+      passwordHash: hashedPassword,
       invitationToken: null,
-      invitationTokenExpires: null,
+      invitationExpires: null,
       status: 'active',
       currentSessionId: sessionId
     });
 
     // Generate token with team member info
-    const authToken = generateBusinessToken(teamMember.Business, teamMember);
+    const authToken = generateBusinessToken(teamMember.business, teamMember);
 
     return res.status(200).json({
       message: 'Invitation accepted successfully',
       token: authToken,
       business: {
-        id: teamMember.Business.id,
-        name: teamMember.Business.name
+        id: teamMember.business.id,
+        name: teamMember.business.businessName
       },
       teamMember: {
         id: teamMember.id,
-        name: teamMember.name,
+        firstName: teamMember.firstName,
+        lastName: teamMember.lastName,
         email: teamMember.email,
         role: teamMember.role
       },
@@ -163,18 +211,44 @@ async function getTeamMembers(req, res) {
     // Get all active and invited team members
     const teamMembers = await TeamMember.findAll({
       where: {
-        businessId: business.id,
+        business_id: business.id,
         status: { [Op.in]: ['active', 'invited'] }
       },
       attributes: [
-        'id', 'name', 'email', 'role', 'status', 
-        'canManageTeam', 'canManageSubscription', 'canManageProducts', 'canViewAnalytics',
-        'lastLogin', 'createdAt'
+        'id', 
+        ['first_name', 'firstName'],
+        ['last_name', 'lastName'], 
+        'email', 
+        'role', 
+        'status', 
+        ['can_manage_team', 'canManageTeam'], 
+        ['can_manage_subscription', 'canManageSubscription'], 
+        ['can_manage_products', 'canManageProducts'], 
+        ['can_view_analytics', 'canViewAnalytics'],
+        ['last_login', 'lastLogin'], 
+        ['created_at', 'createdAt']
       ],
-      order: [['createdAt', 'DESC']]
+      order: [['created_at', 'DESC']]
     });
 
-    return res.status(200).json({ teamMembers });
+    // Format response to include full name
+    const formattedTeamMembers = teamMembers.map(member => ({
+      id: member.id,
+      firstName: member.firstName,
+      lastName: member.lastName,
+      fullName: `${member.firstName} ${member.lastName}`,
+      email: member.email,
+      role: member.role,
+      status: member.status,
+      canManageTeam: member.canManageTeam,
+      canManageSubscription: member.canManageSubscription,
+      canManageProducts: member.canManageProducts,
+      canViewAnalytics: member.canViewAnalytics,
+      lastLogin: member.lastLogin,
+      createdAt: member.createdAt
+    }));
+
+    return res.status(200).json({ teamMembers: formattedTeamMembers });
   } catch (error) {
     console.error('Get team members error:', error);
     return res.status(500).json({ error: 'Failed to get team members' });
@@ -251,7 +325,7 @@ async function removeTeamMember(req, res) {
       where: {
         id,
         businessId: business.id,
-        status: { [Op.in]: ['active', 'invited'] }
+        status: { [Op.in]: ['active', 'invited', 'pending'] }
       }
     });
 
@@ -259,11 +333,11 @@ async function removeTeamMember(req, res) {
       return res.status(404).json({ error: 'Team member not found' });
     }
 
-    // Update team member status to removed
+    // Update team member status to inactive instead of removed
     await teamMember.update({
-      status: 'removed',
+      status: 'inactive',
       invitationToken: null,
-      invitationTokenExpires: null,
+      invitationExpires: null,
       currentSessionId: null
     });
 

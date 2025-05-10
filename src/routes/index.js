@@ -3,7 +3,7 @@ const router = express.Router();
 
 // Import route modules
 const businessAuthRoutes = require('./businessAuth');
-const teamRoutes = require('./team');
+const teamRoutes = require('./teamManagement');
 const subscriptionRoutes = require('./subscription');
 const listingRoutes = require('./listing');
 const promotionCreditRoutes = require('./promotionCredit');

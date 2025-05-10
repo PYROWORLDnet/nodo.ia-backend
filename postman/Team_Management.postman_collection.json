@@ -1,0 +1,318 @@
+{
+  "info": {
+    "_postman_id": "team-management-collection",
+    "name": "Team Management API",
+    "description": "Collection for testing team member management endpoints",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Team Management",
+      "description": "Endpoints for managing team members",
+      "item": [
+        {
+          "name": "Get Team Members",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/team",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "team"]
+            },
+            "description": "Get all team members for the business"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response has teamMembers array\", function () {",
+                  "    const jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('teamMembers');",
+                  "    pm.expect(jsonData.teamMembers).to.be.an('array');",
+                  "    if (jsonData.teamMembers.length > 0) {",
+                  "        const member = jsonData.teamMembers[0];",
+                  "        pm.expect(member).to.have.property('firstName');",
+                  "        pm.expect(member).to.have.property('lastName');",
+                  "        pm.expect(member).to.have.property('email');",
+                  "        pm.expect(member).to.have.property('role');",
+                  "        pm.expect(member).to.have.property('status');",
+                  "    }",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invite Team Member",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"email\": \"teammember@example.com\",\n    \"firstName\": \"John\",\n    \"lastName\": \"Doe\",\n    \"role\": \"editor\",\n    \"canManageTeam\": false,\n    \"canManageSubscription\": false,\n    \"canManageProducts\": true,\n    \"canViewAnalytics\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/team/invite",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "team", "invite"]
+            },
+            "description": "Invite a new team member"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test(\"Response has teamMember object\", function () {",
+                  "    const jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('teamMember');",
+                  "    pm.expect(jsonData.teamMember).to.have.property('id');",
+                  "    pm.expect(jsonData.teamMember).to.have.property('email');",
+                  "    pm.expect(jsonData.teamMember).to.have.property('firstName');",
+                  "    pm.expect(jsonData.teamMember).to.have.property('lastName');",
+                  "    pm.expect(jsonData.teamMember).to.have.property('role');",
+                  "    pm.expect(jsonData.teamMember.status).to.equal('invited');",
+                  "    ",
+                  "    // Save team member ID for later tests",
+                  "    pm.environment.set(\"teamMemberId\", jsonData.teamMember.id);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Accept Invitation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"token\": \"{{invitationToken}}\",\n    \"password\": \"StrongPassword123!\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/team/accept-invitation",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "team", "accept-invitation"]
+            },
+            "description": "Accept team member invitation"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response has token and team member info\", function () {",
+                  "    const jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('token');",
+                  "    pm.expect(jsonData).to.have.property('teamMember');",
+                  "    pm.expect(jsonData).to.have.property('business');",
+                  "    pm.expect(jsonData).to.have.property('sessionId');",
+                  "    ",
+                  "    const member = jsonData.teamMember;",
+                  "    pm.expect(member).to.have.property('firstName');",
+                  "    pm.expect(member).to.have.property('lastName');",
+                  "    pm.expect(member).to.have.property('email');",
+                  "    pm.expect(member).to.have.property('role');",
+                  "    ",
+                  "    // Save token for team member",
+                  "    pm.environment.set(\"teamMemberToken\", jsonData.token);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Team Member",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"role\": \"manager\",\n    \"canManageTeam\": true,\n    \"canManageSubscription\": true,\n    \"canManageProducts\": true,\n    \"canViewAnalytics\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/team/{{teamMemberId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "team", "{{teamMemberId}}"]
+            },
+            "description": "Update team member permissions"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response has updated team member\", function () {",
+                  "    const jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('teamMember');",
+                  "    const member = jsonData.teamMember;",
+                  "    pm.expect(member.role).to.equal('manager');",
+                  "    pm.expect(member.canManageTeam).to.be.true;",
+                  "    pm.expect(member).to.have.property('firstName');",
+                  "    pm.expect(member).to.have.property('lastName');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Resend Invitation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/team/{{teamMemberId}}/resend-invitation",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "team", "{{teamMemberId}}", "resend-invitation"]
+            },
+            "description": "Resend invitation to team member"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response has success message\", function () {",
+                  "    const jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('message');",
+                  "    pm.expect(jsonData.message).to.include('resent successfully');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Remove Team Member",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/team/{{teamMemberId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "team", "{{teamMemberId}}"]
+            },
+            "description": "Remove team member from business"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response has success message\", function () {",
+                  "    const jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('message');",
+                  "    pm.expect(jsonData.message).to.include('removed successfully');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          ""
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          ""
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "type": "string"
+    }
+  ]
+} 

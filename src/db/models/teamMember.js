@@ -39,7 +39,7 @@ module.exports = (sequelize) => {
       defaultValue: 'viewer',
     },
     status: {
-      type: DataTypes.ENUM('active', 'inactive', 'pending', 'blocked'),
+      type: DataTypes.ENUM('active', 'inactive', 'pending', 'blocked', 'removed', 'invited'),
       defaultValue: 'pending',
     },
     invitationToken: {

@@ -1,227 +1,77 @@
 const { Sequelize } = require('sequelize');
+const config = require('../config/database');
 require('dotenv').config();
 
 // Set up connection pooling and other performance optimizations
 const sequelizeOptions = {
   logging: false,
   pool: {
-    max: 10,         // Maximum number of connection in pool
-    min: 2,          // Minimum number of connection in pool
-    idle: 10000,     // The maximum time, in milliseconds, that a connection can be idle before being released
-    acquire: 30000,  // The maximum time, in milliseconds, that pool will try to get connection before throwing error
-    evict: 10000     // The time interval, in milliseconds, after which sequelize-pool will remove idle connections
+    max: 20,         // Increased max connections for better concurrency
+    min: 5,          // Increased min connections to reduce connection time
+    idle: 10000,     // 10 seconds idle time
+    acquire: 60000,  // Increased timeout to 1 minute
+    evict: 1000      // Run cleanup every second
+  },
+  retry: {
+    max: 3,          // Maximum retry attempts
+    timeout: 10000   // Timeout per attempt
+  },
+  dialectOptions: {
+    connectTimeout: 10000, // Connection timeout
+    statement_timeout: 60000, // Statement timeout
+    idle_in_transaction_session_timeout: 60000 // Transaction timeout
   },
   define: {
-    timestamps: false, // Don't expect createdAt and updatedAt fields
+    timestamps: true,
+    underscored: true, // Use snake_case for all fields
+    createdAt: 'created_at',
+    updatedAt: 'updated_at'
   }
 };
 
-// Connection with SSL for remote databases
-const sslOptions = {
-  dialectOptions: {
-    ssl: {
-      require: true,
-      rejectUnauthorized: false
-    }
-  }
-};
-
-// Create Sequelize instance - use DATABASE_URL if available, otherwise use individual credentials
-const sequelize = process.env.DATABASE_URL 
-  ? new Sequelize(process.env.DATABASE_URL, {
-      ...sequelizeOptions,
-      ...sslOptions
-    }) 
-  : new Sequelize({
-      dialect: 'postgres',
-      host: process.env.DB_HOST,
-      port: process.env.DB_PORT,
-      database: process.env.DB_NAME,
-      username: process.env.DB_USER,
-      password: process.env.DB_PASSWORD,
-      ...sequelizeOptions
-    });
-
-// Define vehicle model to match the existing database schema
-const Vehicle = sequelize.define('vehicle', {
-  id: {
-    type: Sequelize.INTEGER,
-    primaryKey: true,
-    autoIncrement: true,
-  },
-  hid: {
-    type: Sequelize.STRING,
-    unique: true
-  },
-  brand: {
-    type: Sequelize.STRING,
-  },
-  model: {
-    type: Sequelize.STRING,
-  },
-  engine: {
-    type: Sequelize.STRING,
-  },
-  year: {
-    type: Sequelize.STRING, // VARCHAR in the database
-  },
-  condition: {
-    type: Sequelize.STRING,
-  },
-  use: {
-    type: Sequelize.STRING,
-  },
-  exterior: {
-    type: Sequelize.STRING,
-  },
-  interior: {
-    type: Sequelize.STRING,
-  },
-  price: {
-    type: Sequelize.STRING, // VARCHAR in the database
-  },
-  price_value: {
-    type: Sequelize.STRING,
-  },
-  transmission: {
-    type: Sequelize.STRING,
-  },
-  traction: {
-    type: Sequelize.STRING,
-  },
-  fuel: {
-    type: Sequelize.STRING,
-  },
-  passengers: {
-    type: Sequelize.STRING, // VARCHAR in the database
-  },
-  dealer: {
-    type: Sequelize.STRING,
-  },
-  dealer_telephone: {
-    type: Sequelize.TEXT,
-  },
-  location: {
-    type: Sequelize.TEXT,
-  },
-  address: {
-    type: Sequelize.STRING,
-  },
-  accessories: {
-    type: Sequelize.TEXT,
-  },
-  coordinates: {
-    type: Sequelize.STRING,
-  },
-  detail_url: {
-    type: Sequelize.TEXT,
-  },
-  images_url: {
-    type: Sequelize.TEXT,
-  },
-}, {
-  timestamps: false, // Don't expect createdAt and updatedAt fields
-  tableName: 'vehicles',
-  // Disable model name pluralization - use exactly 'vehicles' as the table name
-  freezeTableName: true
+// Create Sequelize instance with optimized settings
+const sequelize = new Sequelize(config.url, {
+  ...config.options,
+  ...sequelizeOptions,
+  logging: process.env.NODE_ENV === 'development' ? console.log : false
 });
-
-// Import our models
-const UserModel = require('./models/user');
-const SearchHistoryModel = require('./models/searchHistory');
-const BusinessModel = require('./models/business');
-const TeamMemberModel = require('./models/teamMember');
-const SubscriptionModel = require('./models/subscription');
-const TransactionModel = require('./models/transaction');
-const ListingModel = require('./models/listing');
-const PromotionCreditModel = require('./models/promotionCredit');
-const SearchAnalyticsModel = require('./models/searchAnalytics');
-
-// Initialize models
-const User = UserModel(sequelize);
-const SearchHistory = SearchHistoryModel(sequelize);
-const Business = BusinessModel(sequelize);
-const TeamMember = TeamMemberModel(sequelize);
-const Subscription = SubscriptionModel(sequelize);
-const Transaction = TransactionModel(sequelize);
-const Listing = ListingModel(sequelize);
-const PromotionCredit = PromotionCreditModel(sequelize);
-const SearchAnalytics = SearchAnalyticsModel(sequelize);
-
-// Define relationships
-User.hasMany(SearchHistory, { foreignKey: 'userId', as: 'searches' });
-SearchHistory.belongsTo(User, { foreignKey: 'userId' });
-
-// Business relationships
-Business.hasMany(TeamMember, { foreignKey: 'businessId', as: 'teamMembers' });
-TeamMember.belongsTo(Business, { foreignKey: 'businessId' });
-
-Business.hasMany(Subscription, { foreignKey: 'businessId', as: 'subscriptions' });
-Subscription.belongsTo(Business, { foreignKey: 'businessId' });
-
-Business.hasMany(Transaction, { foreignKey: 'businessId', as: 'transactions' });
-Transaction.belongsTo(Business, { foreignKey: 'businessId' });
-
-Business.hasMany(Listing, { foreignKey: 'businessId', as: 'listings' });
-Listing.belongsTo(Business, { foreignKey: 'businessId' });
-
-Business.hasMany(PromotionCredit, { foreignKey: 'businessId', as: 'promotionCredits' });
-PromotionCredit.belongsTo(Business, { foreignKey: 'businessId' });
-
-Business.hasMany(SearchAnalytics, { foreignKey: 'businessId', as: 'searchAnalytics' });
-SearchAnalytics.belongsTo(Business, { foreignKey: 'businessId' });
-
-// Subscription and Transaction relationship
-Subscription.hasMany(Transaction, { foreignKey: 'subscriptionId', as: 'transactions' });
-Transaction.belongsTo(Subscription, { foreignKey: 'subscriptionId' });
-
-// Transaction and PromotionCredit relationship
-Transaction.hasMany(PromotionCredit, { foreignKey: 'transactionId', as: 'promotionCredits' });
-PromotionCredit.belongsTo(Transaction, { foreignKey: 'transactionId' });
-
-// Listing and PromotionCredit relationship
-Listing.hasMany(PromotionCredit, { foreignKey: 'listingId', as: 'promotionCredits' });
-PromotionCredit.belongsTo(Listing, { foreignKey: 'listingId' });
 
 // Query execution cache
 const queryCache = new Map();
 const QUERY_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 
-// Initialize DB connection
+// Initialize DB connection with retry logic
 const initDb = async () => {
-  try {
-    await sequelize.authenticate();
-    console.log('Database connection established successfully.');
-    
-    // Enable the pg_trgm extension for fuzzy text matching if not already enabled
-    try {
-      await sequelize.query('CREATE EXTENSION IF NOT EXISTS pg_trgm;');
-      console.log('PostgreSQL pg_trgm extension enabled for fuzzy text matching');
-    } catch (extensionError) {
-      console.warn('Could not enable pg_trgm extension:', extensionError.message);
-      console.warn('Fuzzy text matching will not be available');
-    }
+  let retries = 0;
+  const maxRetries = 3;
+  const retryDelay = 2000; // 2 seconds
 
-    // Sync models with database
-    await sequelize.sync({ alter: true });
-    console.log('Models synchronized with database');
-    
-    return { 
-      sequelize, 
-      Vehicle, 
-      User, 
-      SearchHistory,
-      Business,
-      TeamMember,
-      Subscription,
-      Transaction,
-      Listing,
-      PromotionCredit,
-      SearchAnalytics
-    };
-  } catch (error) {
-    console.error('Unable to connect to the database:', error);
-    process.exit(1);
+  while (retries < maxRetries) {
+    try {
+      await sequelize.authenticate();
+      console.log('Database connection established successfully.');
+      
+      // Enable the pg_trgm extension for fuzzy text matching if not already enabled
+      try {
+        await sequelize.query('CREATE EXTENSION IF NOT EXISTS pg_trgm;');
+        console.log('PostgreSQL pg_trgm extension enabled for fuzzy text matching');
+      } catch (extensionError) {
+        console.warn('Could not enable pg_trgm extension:', extensionError.message);
+      }
+      
+      return true;
+    } catch (error) {
+      retries++;
+      console.error(`Database connection attempt ${retries} failed:`, error.message);
+      
+      if (retries === maxRetries) {
+        console.error('Max retries reached, could not connect to database');
+        throw error;
+      }
+      
+      // Wait before retrying
+      await new Promise(resolve => setTimeout(resolve, retryDelay));
+    }
   }
 };
 
@@ -284,16 +134,6 @@ const clearQueryCache = () => {
 module.exports = {
   initDb,
   executeRawQuery,
-  Vehicle,
-  User,
-  SearchHistory,
-  Business,
-  TeamMember,
-  Subscription,
-  Transaction,
-  Listing,
-  PromotionCredit,
-  SearchAnalytics,
   sequelize,
   clearQueryCache
 }; 

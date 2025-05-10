@@ -1,11 +1,12 @@
-const { Business } = require('../db');
+const { Business } = require('../db/init');
 const { Op } = require('sequelize');
 const { 
   hashPassword, 
   verifyPassword,
   generateBusinessToken,
   generateVerificationToken,
-  generatePasswordResetToken
+  generatePasswordResetToken,
+  validateCedula
 } = require('../utils/businessAuth');
 const { sendEmail } = require('../utils/emailService');
 const { 
@@ -17,50 +18,89 @@ const {
 /**
  * Register a new business
  */
-const register = async (req, res) => {
+const register = async (req, res, next) => {
   try {
-    const { name, email, password, phone, owner } = req.body;
-    
-    // Check if business with email already exists
+    const {
+      ownerName,
+      businessName,
+      identityNumber,
+      email,
+      password
+    } = req.body;
+
+    // Validate required fields
+    if (!ownerName || !businessName || !identityNumber || !email || !password) {
+      return res.status(400).json({
+        error: 'Missing required fields',
+        message: 'Please provide owner name, business name, identity number, email, and password'
+      });
+    }
+
+    // Validate identity number (Dominican Republic cedula)
+    console.log('Identity number:', identityNumber);
+
+    // Check if email already exists
     const existingBusiness = await Business.findOne({ where: { email } });
     if (existingBusiness) {
       return res.status(409).json({
-        error: 'Conflict',
-        message: 'A business with this email already exists'
+        error: 'Email already registered',
+        message: 'This email address is already registered'
       });
     }
-    
+
+    // Check if identity number already exists
+    const existingIdentity = await Business.findOne({ where: { identityNumber } });
+    if (existingIdentity) {
+      return res.status(409).json({
+        error: 'Identity number already registered',
+        message: 'This identity number is already registered'
+      });
+    }
+
+    // Hash password
+    const hashedPassword = await hashPassword(password);
+
+    // Generate verification token
+    const verificationToken = generateVerificationToken();
+    const verificationTokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
     // Create new business
     const business = await Business.create({
-      name,
+      ownerName,
+      businessName,
+      identityNumber,
       email,
-      passwordHash: await hashPassword(password),
-      phone,
-      owner: owner || {},
+      passwordHash: hashedPassword,
       subscriptionTier: 'free',
       status: 'pending_verification',
       isVerified: false,
-      verificationToken: generateVerificationToken(),
-      verificationTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
+      verificationToken,
+      verificationTokenExpires
     });
-    
+
+    // Log token for debugging
+    console.log('Generated verification token:', verificationToken);
+
     // Send verification email
     await sendEmail(email, businessVerificationEmail({
-      businessName: name,
-      verificationToken: business.verificationToken,
-      frontendUrl: process.env.FRONTEND_URL
+      ownerName,
+      businessName,
+      verificationToken
     }));
-    
+
     res.status(201).json({
       message: 'Business registered successfully. Please check your email to verify your account.',
-      businessId: business.id
+      business: {
+        id: business.id,
+        ownerName: business.ownerName,
+        businessName: business.businessName,
+        email: business.email,
+        verificationToken // Include token in response for testing
+      }
     });
   } catch (error) {
-    console.error('Business registration error:', error);
-    res.status(500).json({
-      error: 'Internal Server Error',
-      message: 'Failed to register business'
-    });
+    console.error('Error in business registration:', error);
+    next(error);
   }
 };
 
@@ -71,37 +111,61 @@ const verifyEmail = async (req, res) => {
   try {
     const { token } = req.body;
     
-    // Find business with token
+    console.log('Attempting to verify email with token:', token);
+    
+    // Debug: Check if token exists in database
+    const tokenCheck = await Business.findOne({
+      where: {
+        verificationToken: token
+      },
+      attributes: ['id', 'email', 'verificationToken', 'verificationTokenExpires', 'isVerified', 'status']
+    });
+    
+    console.log('Token check result:', tokenCheck ? {
+      found: true,
+      id: tokenCheck.id,
+      email: tokenCheck.email,
+      isVerified: tokenCheck.isVerified,
+      status: tokenCheck.status,
+      tokenExpires: tokenCheck.verificationTokenExpires
+    } : 'Not found');
+    
+    // Find business with token and expiry
     const business = await Business.findOne({
       where: {
         verificationToken: token,
-        verificationTokenExpiry: { [Op.gt]: new Date() }
+        verificationTokenExpires: { [Op.gt]: new Date() }
       }
     });
     
     if (!business) {
+      console.log('Business not found or token expired');
       return res.status(400).json({
         error: 'Bad Request',
         message: 'Invalid or expired verification token'
       });
     }
     
+    console.log('Business found, updating verification status for ID:', business.id);
+    
     // Update business
     await business.update({
       isVerified: true,
       status: 'active',
       verificationToken: null,
-      verificationTokenExpiry: null
+      verificationTokenExpires: null
     });
     
     // Send welcome email
     await sendEmail(business.email, welcomeEmail({
-      businessName: business.name,
+      businessName: business.businessName,
       frontendUrl: process.env.FRONTEND_URL
     }));
     
     // Generate token
     const authToken = generateBusinessToken(business);
+    
+    console.log('Email verification successful for business:', business.id);
     
     res.json({
       message: 'Email verified successfully',
@@ -172,7 +236,7 @@ const login = async (req, res) => {
       token,
       business: {
         id: business.id,
-        name: business.name,
+        name: business.businessName,
         email: business.email,
         subscriptionTier: business.subscriptionTier
       }
@@ -215,7 +279,7 @@ const requestPasswordReset = async (req, res) => {
     
     // Send email
     await sendEmail(email, passwordResetEmail({
-      businessName: business.name,
+      businessName: business.businessName,
       resetToken,
       frontendUrl: process.env.FRONTEND_URL
     }));
@@ -282,10 +346,10 @@ const getProfile = async (req, res) => {
     
     res.json({
       id: business.id,
-      name: business.name,
+      name: business.businessName,
       email: business.email,
       phone: business.phone,
-      owner: business.owner,
+      owner: business.ownerName,
       address: business.address,
       subscriptionTier: business.subscriptionTier,
       status: business.status,
@@ -312,9 +376,9 @@ const updateProfile = async (req, res) => {
     
     // Update fields
     await business.update({
-      name: name || business.name,
+      name: name || business.businessName,
       phone: phone || business.phone,
-      owner: owner || business.owner,
+      owner: owner || business.ownerName,
       address: address || business.address
     });
     
@@ -322,10 +386,10 @@ const updateProfile = async (req, res) => {
       message: 'Profile updated successfully',
       business: {
         id: business.id,
-        name: business.name,
+        name: business.businessName,
         email: business.email,
         phone: business.phone,
-        owner: business.owner,
+        owner: business.ownerName,
         address: business.address
       }
     });

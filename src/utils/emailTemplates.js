@@ -3,96 +3,50 @@
  */
 
 // Business verification email
-const businessVerificationEmail = (businessName, verificationLink) => {
+const businessVerificationEmail = ({ ownerName, businessName, verificationToken }) => {
+  const verificationUrl = `${process.env.FRONTEND_URL}/verify-business?token=${verificationToken}`;
+  
   return {
-    subject: 'Verify Your Business Account',
+    subject: `Verify Your Business Account - ${businessName}`,
     html: `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Verify Your Business Account</title>
-        <style>
-          body {
-            font-family: Arial, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            margin: 0;
-            padding: 0;
-          }
-          .container {
-            max-width: 600px;
-            margin: 0 auto;
-            padding: 20px;
-          }
-          .header {
-            background-color: #4a6cf7;
-            padding: 20px;
-            text-align: center;
-          }
-          .header h1 {
-            color: white;
-            margin: 0;
-          }
-          .content {
-            padding: 20px;
-            background-color: #f9f9f9;
-          }
-          .button {
-            display: inline-block;
-            background-color: #4a6cf7;
-            color: white;
-            text-decoration: none;
-            padding: 10px 20px;
-            border-radius: 4px;
-            margin: 20px 0;
-          }
-          .footer {
-            padding: 20px;
-            text-align: center;
-            font-size: 12px;
-            color: #666;
-          }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <h1>Welcome to Our Platform!</h1>
-          </div>
-          <div class="content">
-            <p>Hello ${businessName},</p>
-            <p>Thank you for registering your business with us. Please verify your email address to activate your account.</p>
-            <p style="text-align: center;">
-              <a href="${verificationLink}" class="button">Verify Email</a>
-            </p>
-            <p>If the button doesn't work, copy and paste this link into your browser:</p>
-            <p>${verificationLink}</p>
-            <p>This verification link will expire in 24 hours.</p>
-          </div>
-          <div class="footer">
-            <p>If you didn't create an account, please ignore this email or contact our support team.</p>
-            <p>&copy; ${new Date().getFullYear()} Our Platform. All rights reserved.</p>
-          </div>
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2>Welcome to Our Platform!</h2>
+        <p>Dear ${ownerName},</p>
+        <p>Thank you for registering <strong>${businessName}</strong> on our platform. We're excited to have you join our community of businesses!</p>
+        <p>To complete your registration and activate your account, please verify your email address by clicking the button below:</p>
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${verificationUrl}" style="background-color: #4CAF50; color: white; padding: 14px 28px; text-decoration: none; border-radius: 5px; font-weight: bold;">
+            Verify Your Account
+          </a>
         </div>
-      </body>
-      </html>
+        <p>This verification link will expire in 24 hours for security reasons.</p>
+        <p>If you can't click the button, you can copy and paste this link into your browser:</p>
+        <p style="word-break: break-all; color: #666;">${verificationUrl}</p>
+        <p>If you didn't create this account, please ignore this email or contact our support team.</p>
+        <hr style="border: 1px solid #eee; margin: 30px 0;">
+        <p style="color: #666; font-size: 12px;">
+          This is an automated message, please do not reply to this email. If you need assistance, 
+          please contact our support team.
+        </p>
+      </div>
     `,
     text: `
-      Hello ${businessName},
-      
-      Thank you for registering your business with us. Please verify your email address to activate your account.
-      
-      Please visit the following link to verify your email:
-      ${verificationLink}
-      
-      This verification link will expire in 24 hours.
-      
-      If you didn't create an account, please ignore this email or contact our support team.
-      
-      © ${new Date().getFullYear()} Our Platform. All rights reserved.
-    `,
+Welcome to Our Platform!
+
+Dear ${ownerName},
+
+Thank you for registering ${businessName} on our platform. We're excited to have you join our community of businesses!
+
+To complete your registration and activate your account, please verify your email address by visiting this link:
+
+${verificationUrl}
+
+This verification link will expire in 24 hours for security reasons.
+
+If you didn't create this account, please ignore this email or contact our support team.
+
+This is an automated message, please do not reply to this email. If you need assistance, please contact our support team.
+    `
   };
 };
 
@@ -709,11 +663,41 @@ const subscriptionConfirmationEmail = (businessName, planName, amount, startDate
   };
 };
 
+/**
+ * Generate team member invitation email content
+ * @param {Object} params Email parameters
+ * @returns {Object} Email subject and body
+ */
+function teamMemberInvitationEmail({ businessName, teamMemberName, inviterName, role, invitationUrl }) {
+  return {
+    subject: `You've been invited to join ${businessName} team`,
+    html: `
+      <h2>Welcome to ${businessName}!</h2>
+      <p>Hi ${teamMemberName},</p>
+      <p>${inviterName} has invited you to join ${businessName} as a team member with the role of ${role}.</p>
+      <p>To accept this invitation and set up your account, please click the button below:</p>
+      <p>
+        <a href="${invitationUrl}" style="display: inline-block; padding: 10px 20px; background-color: #007bff; color: white; text-decoration: none; border-radius: 5px;">
+          Accept Invitation
+        </a>
+      </p>
+      <p>Or copy and paste this URL into your browser:</p>
+      <p>${invitationUrl}</p>
+      <p>This invitation will expire in 7 days.</p>
+      <p>If you did not expect this invitation, please ignore this email.</p>
+      <br>
+      <p>Best regards,</p>
+      <p>The ${businessName} Team</p>
+    `
+  };
+}
+
 module.exports = {
   businessVerificationEmail,
   welcomeEmail,
   passwordResetEmail,
   teamInvitationEmail,
   loginNotificationEmail,
-  subscriptionConfirmationEmail
+  subscriptionConfirmationEmail,
+  teamMemberInvitationEmail
 };

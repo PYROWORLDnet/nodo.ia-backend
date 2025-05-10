@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const { Business, TeamMember } = require('../db');
+const { Business, TeamMember } = require('../db/init');
 
 /**
  * Middleware to authenticate business requests using JWT
@@ -22,7 +22,7 @@ const businessAuthMiddleware = async (req, res, next) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     
     // Check if business exists and is active
-    const business = await Business.findByPk(decoded.businessId);
+    const business = await Business.findByPk(decoded.id);
     
     if (!business) {
       return res.status(401).json({ 

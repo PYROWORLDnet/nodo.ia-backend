@@ -52,8 +52,13 @@ const generateResetPasswordToken = () => {
 };
 
 // Generate team invitation token
-const generateInvitationToken = () => {
+const generateTeamInvitationToken = () => {
   return crypto.randomBytes(32).toString('hex');
+};
+
+// Generate session ID
+const generateSessionId = () => {
+  return crypto.randomBytes(16).toString('hex');
 };
 
 // Validate Dominican ID (Cédula)
@@ -68,15 +73,9 @@ const validateCedula = (cedula) => {
 
   try {
     // Algorithm validation (simplified version)
-    // In a real application, you would implement the full validation algorithm
-    // This is a placeholder for the actual validation logic
     const digits = cleanCedula.split('').map(Number);
-    
-    // The last digit is the verification digit
     const checkDigit = digits.pop();
     
-    // Simple validation (in reality, the algorithm is more complex)
-    // This is just a placeholder for illustration
     let sum = 0;
     for (let i = 0; i < digits.length; i++) {
       const weight = (i % 2 === 0) ? 1 : 2;
@@ -94,18 +93,13 @@ const validateCedula = (cedula) => {
   }
 };
 
-// Generate session ID
-const generateSessionId = () => {
-  return uuidv4();
-};
-
 module.exports = {
   hashPassword,
   verifyPassword,
   generateBusinessToken,
   generateVerificationToken,
   generateResetPasswordToken,
-  generateInvitationToken,
-  validateCedula,
-  generateSessionId
+  generateTeamInvitationToken,
+  generateSessionId,
+  validateCedula
 }; 
