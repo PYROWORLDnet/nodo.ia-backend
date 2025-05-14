@@ -6,10 +6,13 @@ const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
-const { initializeDatabase } = require('./db/init');
+const path = require('path');
+const { initializeDatabase } = require('./db');
 const { verifyEmailConfig } = require('./utils/emailService');
 const routes = require('./routes');
 const stripeWebhookRoutes = require('./routes/stripeWebhook');
+const { createUploadDirectories } = require('./config/upload');
+const { startJobs } = require('./jobs');
 
 // Initialize Express app
 const app = express();
@@ -19,22 +22,50 @@ if (process.env.NODE_ENV === 'production') {
   app.set('trust proxy', 1);
 }
 
-// Handle Stripe webhooks before body parser
-// This must be called before any other middleware that would parse the request body
-app.use('/api/webhooks/stripe', express.raw({ type: 'application/json' }), stripeWebhookRoutes);
+// Regular middleware for all routes except webhooks
+app.use((req, res, next) => {
+  if (req.originalUrl !== '/api/webhooks/stripe') {
+    express.json({ limit: '10mb' })(req, res, next);
+  } else {
+    next();
+  }
+});
 
-// Middleware
-app.use(helmet()); // Security headers
-app.use(express.json({ limit: '10mb' })); // Parse JSON bodies
-app.use(express.urlencoded({ extended: true, limit: '10mb' })); // Parse URL-encoded bodies
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
-app.use(cors()); // Enable CORS
-app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev')); // Logging
+
+// Enable CORS for all routes
+const corsOptions = {
+  origin: process.env.FRONTEND_URL || '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Stripe-Signature'],
+  credentials: true,
+  exposedHeaders: ['Content-Disposition', 'Cross-Origin-Resource-Policy']
+};
+
+app.use(cors(corsOptions));
+
+// Stripe webhook route (must be before other middleware)
+app.use('/api/webhooks/stripe', stripeWebhookRoutes);
+
+// Security middleware
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      imgSrc: ["'self'", "data:", "blob:", "*"],
+      connectSrc: ["'self'", process.env.FRONTEND_URL || '*'],
+    }
+  }
+}));
+
+app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
 // Rate limiting
 const limiter = rateLimit({
-  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // Default: 15 minutes
-  max: parseInt(process.env.RATE_LIMIT_MAX) || 100, // Default: 100 requests per windowMs
+  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
+  max: parseInt(process.env.RATE_LIMIT_MAX) || 100,
   standardHeaders: true,
   legacyHeaders: false
 });
@@ -47,12 +78,19 @@ app.use(compression());
 app.get('/health', async (req, res) => {
   try {
     // Check database connection
-    await require('./db').sequelize.authenticate();
+    const { sequelize } = require('./db');
+    await sequelize.authenticate();
     res.json({ status: 'healthy', database: 'connected' });
   } catch (error) {
     res.status(503).json({ status: 'unhealthy', database: 'disconnected', error: error.message });
   }
 });
+
+// Create necessary upload directories
+createUploadDirectories();
+
+// Serve uploaded files
+app.use('/uploads', express.static('uploads'));
 
 // Register routes
 app.use('/api', routes);
@@ -75,27 +113,26 @@ app.use((req, res) => {
 });
 
 // Initialize app
-async function initApp() {
+const initApp = async () => {
   try {
     // Initialize database
-    await initializeDatabase().catch(error => {
-      console.error('Database initialization failed:', error);
-      // Don't throw error, let the app continue trying to start
-    });
+    await initializeDatabase();
     
     // Start verifying email configuration in the background
     verifyEmailConfig().catch(error => {
       console.error('Email configuration verification failed:', error);
       // Don't throw error, let the app continue running
     });
+
+    // Start cron jobs
+    startJobs();
     
     return app;
   } catch (error) {
     console.error('Failed to initialize app:', error);
-    // Don't throw error, return app anyway to allow for graceful handling
-    return app;
+    throw error; // Throw error to prevent app from starting with failed database
   }
-}
+};
 
 module.exports = {
   initApp

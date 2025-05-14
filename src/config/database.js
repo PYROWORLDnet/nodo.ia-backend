@@ -1,39 +1,50 @@
 require('dotenv').config();
 
-const isDevelopment = process.env.NODE_ENV === 'development';
-
-// Base Sequelize options
-const baseOptions = {
+const baseConfig = {
   dialect: 'postgres',
+  define: {
+    timestamps: true,
+    underscored: true,
+    createdAt: 'created_at',
+    updatedAt: 'updated_at',
+    deletedAt: 'deleted_at'
+  },
   pool: {
-    max: 5,
+    max: 10,
     min: 0,
     acquire: 30000,
     idle: 10000
+  }
+};
+
+module.exports = {
+  development: {
+    ...baseConfig,
+    username: process.env.DB_USER || 'postgres',
+    password: process.env.DB_PASSWORD || 'postgres',
+    database: process.env.DB_NAME || 'nodo_dev',
+    host: process.env.DB_HOST || '127.0.0.1',
+    port: process.env.DB_PORT || 5432,
+    logging: console.log
   },
-  define: {
-    timestamps: true,
-    underscored: false
+  test: {
+    ...baseConfig,
+    username: process.env.DB_USER || 'postgres',
+    password: process.env.DB_PASSWORD || 'postgres',
+    database: process.env.DB_NAME || 'nodo_test',
+    host: process.env.DB_HOST || '127.0.0.1',
+    port: process.env.DB_PORT || 5432,
+    logging: false
+  },
+  production: {
+    ...baseConfig,
+    use_env_variable: 'DATABASE_URL',
+    dialectOptions: {
+      ssl: {
+        require: true,
+        rejectUnauthorized: false
+      }
+    },
+    logging: false
   }
-};
-
-// SSL configuration for production
-const sslConfig = {
-  dialectOptions: {
-    ssl: {
-      require: true,
-      rejectUnauthorized: false
-    }
-  }
-};
-
-// Configuration object
-const config = {
-  url: process.env.DATABASE_URL || `postgres://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/${process.env.DB_NAME}`,
-  options: {
-    ...baseOptions,
-    ...(isDevelopment ? {} : sslConfig)
-  }
-};
-
-module.exports = config; 
+}; 

@@ -2,6 +2,7 @@ const { Business, Subscription, Transaction, PromotionCredit } = require('../db'
 const { handleStripeEvent } = require('../utils/stripeService');
 const { subscriptionConfirmationEmail } = require('../utils/emailTemplates');
 const { sendEmail } = require('../utils/emailService');
+const { updatePlanLimits, resetMonthlyCredits } = require('../utils/planLimitService');
 
 /**
  * Handle Stripe webhook events
@@ -57,29 +58,26 @@ async function handleWebhook(req, res) {
  */
 async function handleCheckoutSessionCompleted(session) {
   try {
-    // Get business ID and type from metadata
-    const { businessId, type } = session.metadata || {};
+    const { businessId, planId } = session.metadata;
     
-    if (!businessId) {
-      console.error('Missing business ID in session metadata');
+    if (!businessId || !planId) {
+      console.error('Missing metadata in checkout session');
       return;
     }
+
+    // Update plan limits for the business
+    await updatePlanLimits(businessId, planId);
     
     // Find business
     const business = await Business.findByPk(businessId);
     
-    if (!business) {
-      console.error(`Business not found: ${businessId}`);
-      return;
-    }
-    
-    // Process based on checkout type
-    if (type === 'subscription') {
-      // Subscription purchase
-      // Note: Stripe will trigger customer.subscription.created/updated events
-      // which will be handled separately
-    } else if (type === 'promotion_credit') {
-      await handlePromotionCreditPurchase(session, business);
+    if (business) {
+      // Send welcome email for new subscriptions
+      await sendEmail(business.email, subscriptionConfirmationEmail({
+        businessName: business.name,
+        planName: `${planId.charAt(0).toUpperCase() + planId.slice(1)} Plan`,
+        startDate: new Date().toLocaleDateString()
+      }));
     }
   } catch (error) {
     console.error('Error handling checkout session completed:', error);
@@ -133,13 +131,19 @@ async function handleInvoicePaid(invoice) {
       }
     });
     
-    // Find business
-    const business = await Business.findByPk(subscription.businessId);
+    // Reset monthly credits if it's time
+    const subscribedBusiness = await Business.findByPk(subscription.businessId);
+    if (subscribedBusiness && subscribedBusiness.next_credits_reset && new Date() >= subscribedBusiness.next_credits_reset) {
+      await resetMonthlyCredits(subscribedBusiness.id);
+    }
+    
+    // Find business for email
+    const businessForEmail = await Business.findByPk(subscription.businessId);
     
     // Send confirmation email
-    if (business) {
-      await sendEmail(business.email, subscriptionConfirmationEmail({
-        businessName: business.name,
+    if (businessForEmail) {
+      await sendEmail(businessForEmail.email, subscriptionConfirmationEmail({
+        businessName: businessForEmail.name,
         planName: `${subscription.planId.charAt(0).toUpperCase() + subscription.planId.slice(1)} Plan`,
         amount: (invoice.amount_paid / 100).toFixed(2),
         startDate: new Date().toLocaleDateString(),
@@ -255,6 +259,18 @@ async function handleSubscriptionUpdated(stripeSubscription) {
         }
       }
     }
+
+    // Update plan limits if plan changed
+    const planId = stripeSubscription.items.data[0]?.price.product;
+    if (planId && stripeSubscription.status === 'active') {
+      const businessToUpdate = await Business.findOne({
+        where: { stripeCustomerId: stripeSubscription.customer }
+      });
+      
+      if (businessToUpdate) {
+        await updatePlanLimits(businessToUpdate.id, planId);
+      }
+    }
   } catch (error) {
     console.error('Error handling subscription updated:', error);
   }
@@ -285,6 +301,15 @@ async function handleSubscriptionDeleted(stripeSubscription) {
     const business = await Business.findByPk(subscription.businessId);
     if (business) {
       await business.update({ subscriptionTier: 'free' });
+    }
+
+    // Reset to free plan limits
+    const businessToReset = await Business.findOne({
+      where: { stripeCustomerId: stripeSubscription.customer }
+    });
+    
+    if (businessToReset) {
+      await updatePlanLimits(businessToReset.id, 'free');
     }
   } catch (error) {
     console.error('Error handling subscription deleted:', error);

@@ -6,103 +6,101 @@ const { Business, TeamMember } = require('../db/init');
  */
 const businessAuthMiddleware = async (req, res, next) => {
   try {
-    // Get the token from authorization header
+    // Get token from Authorization header
     const authHeader = req.headers.authorization;
-    
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ 
-        error: 'Unauthorized', 
-        message: 'Authentication token is required' 
-      });
+      return res.status(401).json({ error: 'No token provided' });
     }
-    
+
     const token = authHeader.split(' ')[1];
-    
+    if (!token) {
+      return res.status(401).json({ error: 'Invalid token format' });
+    }
+
     // Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     
-    // Check if business exists and is active
-    const business = await Business.findByPk(decoded.id);
-    
+    // Get business ID from token
+    const businessId = decoded.businessId || decoded.id;
+    if (!businessId) {
+      return res.status(401).json({ error: 'Invalid token: no business ID found' });
+    }
+
+    // Get business from database
+    const business = await Business.findByPk(businessId);
     if (!business) {
-      return res.status(401).json({ 
-        error: 'Unauthorized', 
-        message: 'Business not found' 
-      });
+      return res.status(401).json({ error: 'Business not found' });
     }
-    
-    if (business.status !== 'active') {
-      return res.status(403).json({ 
-        error: 'Forbidden', 
-        message: 'Business account is not active' 
-      });
+
+    // Check if business is active
+    if (business.status !== 'active' && business.status !== 'pending') {
+      return res.status(403).json({ error: 'Business account is not active' });
     }
-    
-    // If this is a team member login
+
+    // Initialize permissions
+    let permissions = {
+      canManageTeam: false,
+      canManageSubscription: false,
+      canManageProducts: false,
+      canViewAnalytics: false
+    };
+
+    // Check if this is a team member login
     let teamMember = null;
     if (decoded.teamMember && decoded.teamMember.id) {
       teamMember = await TeamMember.findOne({
         where: {
           id: decoded.teamMember.id,
-          businessId: business.id,
+          business_id: business.id,
           status: 'active'
         }
       });
       
       if (!teamMember) {
-        return res.status(401).json({ error: 'Unauthorized: Team member not found or inactive' });
+        return res.status(401).json({ error: 'Team member not found or inactive' });
       }
-    }
-    
-    // Update last login time
-    await business.update({ lastLogin: new Date() });
-    
-    // Attach business to request
-    req.business = business;
-    req.teamMember = teamMember;
-    req.isTeamMember = !!teamMember;
-    
-    // Add permissions to request based on role
-    if (teamMember) {
-      req.permissions = {
-        canManageTeam: teamMember.canManageTeam,
-        canManageSubscription: teamMember.canManageSubscription,
-        canManageProducts: teamMember.canManageProducts,
-        canViewAnalytics: teamMember.canViewAnalytics,
+
+      // Set team member permissions
+      permissions = {
+        canManageTeam: teamMember.can_manage_team || false,
+        canManageSubscription: teamMember.can_manage_subscription || false,
+        canManageProducts: teamMember.can_manage_products || false,
+        canViewAnalytics: teamMember.can_view_analytics || false
       };
     } else {
       // Business owner has all permissions
-      req.permissions = {
+      permissions = {
         canManageTeam: true,
         canManageSubscription: true,
         canManageProducts: true,
-        canViewAnalytics: true,
+        canViewAnalytics: true
       };
     }
     
-    req.user = { id: business.id, email: business.email, role: 'business' };
+    // Update last login time
+    if (teamMember) {
+      await teamMember.update({ last_login: new Date() });
+    } else {
+      await business.update({ last_login: new Date() });
+    }
+    
+    // Attach business, team member info, and permissions to request
+    req.business = business;
+    req.teamMember = teamMember;
+    req.isTeamMember = !!teamMember;
+    req.permissions = permissions;
+    req.user = teamMember || business; // For compatibility with both types
     
     next();
   } catch (error) {
-    if (error.name === 'TokenExpiredError') {
-      return res.status(401).json({ 
-        error: 'Unauthorized', 
-        message: 'Token expired' 
-      });
-    }
-    
     if (error.name === 'JsonWebTokenError') {
-      return res.status(401).json({ 
-        error: 'Unauthorized', 
-        message: 'Invalid token' 
-      });
+      return res.status(401).json({ error: 'Invalid token' });
     }
-    
-    console.error('Authentication error:', error);
-    return res.status(500).json({ 
-      error: 'Internal Server Error', 
-      message: 'Failed to authenticate' 
-    });
+    if (error.name === 'TokenExpiredError') {
+      return res.status(401).json({ error: 'Token expired' });
+    }
+    console.error('Auth middleware error:', error);
+    res.status(500).json({ error: 'Authentication failed' });
   }
 };
 
@@ -110,12 +108,20 @@ const businessAuthMiddleware = async (req, res, next) => {
  * Middleware to verify business is verified
  */
 const requireVerifiedBusiness = (req, res, next) => {
-  if (!req.business.isVerified) {
+  // Skip verification check if business is already active and verified
+  if (req.business.status === 'active' && req.business.is_verified) {
+    return next();
+  }
+
+  // Check if verification is required
+  if (!req.business.is_verified) {
     return res.status(403).json({ 
       error: 'Forbidden', 
-      message: 'Email verification required' 
+      message: 'Email verification required',
+      verificationRequired: true
     });
   }
+
   next();
 };
 
@@ -130,7 +136,7 @@ const requireSubscriptionTier = (minimumTier) => {
       'pro': 2
     };
     
-    const businessTier = req.business.subscriptionTier || 'free';
+    const businessTier = req.business.subscription_tier || 'free';
     
     if (tierValues[businessTier] < tierValues[minimumTier]) {
       return res.status(403).json({
@@ -145,25 +151,17 @@ const requireSubscriptionTier = (minimumTier) => {
 };
 
 /**
- * Middleware to check analytics access
- */
-const requireAnalyticsAccess = (req, res, next) => {
-  // All tiers have access to basic analytics
-  next();
-};
-
-/**
  * Middleware to check team member permissions
  */
 const requireTeamPermission = (permission) => {
   return async (req, res, next) => {
     // If it's a business owner, they have all permissions
-    if (req.business) {
+    if (!req.isTeamMember) {
       return next();
     }
     
     // For team members, check specific permission
-    if (!req.teamMember || !req.teamMember.permissions.includes(permission)) {
+    if (!req.permissions[permission]) {
       return res.status(403).json({
         error: 'Forbidden',
         message: `You don't have the required permission: ${permission}`
@@ -177,32 +175,32 @@ const requireTeamPermission = (permission) => {
 /**
  * Middleware to check permission: can manage team
  */
-function requireTeamManagement(req, res, next) {
+const requireTeamManagement = (req, res, next) => {
   if (!req.permissions.canManageTeam) {
-    return res.status(403).json({ error: 'Forbidden: Insufficient permissions to manage team' });
+    return res.status(403).json({ error: 'Insufficient permissions to manage team' });
   }
   next();
-}
+};
 
 /**
  * Middleware to check permission: can manage subscription
  */
-function requireSubscriptionManagement(req, res, next) {
+const requireSubscriptionManagement = (req, res, next) => {
   if (!req.permissions.canManageSubscription) {
-    return res.status(403).json({ error: 'Forbidden: Insufficient permissions to manage subscription' });
+    return res.status(403).json({ error: 'Insufficient permissions to manage subscription' });
   }
   next();
-}
+};
 
 /**
  * Middleware to check permission: can manage products/listings
  */
-function requireProductManagement(req, res, next) {
+const requireProductManagement = (req, res, next) => {
   if (!req.permissions.canManageProducts) {
-    return res.status(403).json({ error: 'Forbidden: Insufficient permissions to manage products' });
+    return res.status(403).json({ error: 'Insufficient permissions to manage products' });
   }
   next();
-}
+};
 
 /**
  * Middleware to check for listing limit
@@ -248,35 +246,91 @@ const verifyToken = async (token) => {
   }
 };
 
+/**
+ * Optional authentication middleware
+ */
 const optionalAuth = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      const token = authHeader.split(' ')[1];
-      try {
-        const business = await verifyToken(token);
-        req.business = business;
-      } catch (error) {
-        // Ignore token verification errors in optional auth
-        console.log('Optional auth token invalid:', error.message);
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return next();
+    }
+
+    const token = authHeader.split(' ')[1];
+    if (!token) {
+      return next();
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const businessId = decoded.businessId || decoded.id;
+    if (!businessId) {
+      return next();
+    }
+
+    const business = await Business.findByPk(businessId);
+    if (!business || (business.status !== 'active' && business.status !== 'pending')) {
+      return next();
+    }
+
+    let teamMember = null;
+    let permissions = {
+      canManageTeam: true,
+      canManageSubscription: true,
+      canManageProducts: true,
+      canViewAnalytics: true
+    };
+
+    if (decoded.teamMember && decoded.teamMember.id) {
+      teamMember = await TeamMember.findOne({
+        where: {
+          id: decoded.teamMember.id,
+          business_id: business.id,
+          status: 'active'
+        }
+      });
+
+      if (teamMember) {
+        permissions = {
+          canManageTeam: teamMember.can_manage_team || false,
+          canManageSubscription: teamMember.can_manage_subscription || false,
+          canManageProducts: teamMember.can_manage_products || false,
+          canViewAnalytics: teamMember.can_view_analytics || false
+        };
       }
     }
+
+    req.business = business;
+    req.teamMember = teamMember;
+    req.isTeamMember = !!teamMember;
+    req.permissions = permissions;
+    req.user = teamMember || business;
+    
     next();
   } catch (error) {
-    console.error('Optional auth error:', error);
+    // For optional auth, we just continue without setting req.business
     next();
   }
+};
+
+/**
+ * Middleware to check permission: can view analytics
+ */
+const requireAnalyticsAccess = (req, res, next) => {
+  if (!req.permissions.canViewAnalytics) {
+    return res.status(403).json({ error: 'Insufficient permissions to view analytics' });
+  }
+  next();
 };
 
 module.exports = {
   businessAuthMiddleware,
   requireVerifiedBusiness,
   requireSubscriptionTier,
-  requireAnalyticsAccess,
   requireTeamPermission,
   requireTeamManagement,
   requireSubscriptionManagement,
   requireProductManagement,
+  requireAnalyticsAccess,
   checkListingLimit,
   optionalAuth
 }; 

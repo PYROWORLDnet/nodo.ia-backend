@@ -16,7 +16,7 @@ router.use(requireVerifiedBusiness);
 router.use(requireAnalyticsAccess);
 
 // Analytics dashboard routes
-router.get('/dashboard', analyticsController.getDashboardAnalytics);
+router.get('', analyticsController.getDashboardAnalytics);
 router.get('/listings/performance', analyticsController.getListingPerformance);
 router.get('/search', analyticsController.getSearchAnalytics);
 router.get('/geographic', analyticsController.getGeographicAnalytics);

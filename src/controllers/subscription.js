@@ -1,84 +1,33 @@
-const { Business, Subscription, Transaction } = require('../db/init');
+const { Business, Subscription, Transaction, Invoice } = require('../db/init');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const { Op } = require('sequelize');
-const { 
-  createCheckoutSession, 
-  cancelSubscription, 
-  reactivateSubscription: reactivateStripeSubscription,
-  changeSubscriptionPlan,
-  getSubscriptionPlans
-} = require('../utils/stripeService');
+const { SUBSCRIPTION_PLANS } = require('../config/stripe');
 const { subscriptionConfirmationEmail } = require('../utils/emailTemplates');
 const { sendEmail } = require('../utils/emailService');
-
-// Subscription plan configurations
-const SUBSCRIPTION_PLANS = {
-  free: {
-    name: 'Free Plan',
-    price: 0,
-    features: [
-      'Basic business profile',
-      'Up to 3 listings',
-      'Basic analytics'
-    ],
-    limits: {
-      listings: 3,
-      highlightCredits: 0,
-      patchColor: 'grey'
-    }
-  },
-  smart: {
-    name: 'Smart Plan',
-    price: 29.99,
-    stripePriceId: process.env.STRIPE_SMART_PRICE_ID,
-    features: [
-      'Everything in Free',
-      'Up to 10 listings',
-      'Advanced analytics',
-      '5 highlight credits/month',
-      'Priority support'
-    ],
-    limits: {
-      listings: 10,
-      highlightCredits: 5,
-      patchColor: 'blue'
-    }
-  },
-  pro: {
-    name: 'Pro Plan',
-    price: 99.99,
-    stripePriceId: process.env.STRIPE_PRO_PRICE_ID,
-    features: [
-      'Everything in Smart',
-      'Unlimited listings',
-      'Full analytics suite',
-      '20 highlight credits/month',
-      'Premium support',
-      'Custom branding'
-    ],
-    limits: {
-      listings: -1, // unlimited
-      highlightCredits: 20,
-      patchColor: 'gold'
-    }
-  }
-};
+const logger = require('../utils/logger');
 
 /**
  * Get available subscription plans
  */
 const getPlans = async (req, res) => {
   try {
-    // If user is authenticated, include their current plan
-    const currentPlan = req.business ? req.business.subscription_tier : 'free';
-    
-    return res.json({
-      plans: SUBSCRIPTION_PLANS,
-      currentPlan
-    });
+    // If user is authenticated, get their current plan
+    let currentPlan = null;
+    if (req.business) {
+      const business = await Business.findByPk(req.business.id);
+      currentPlan = business.subscription_tier;
+    }
+
+    const plans = Object.entries(SUBSCRIPTION_PLANS).map(([id, plan]) => ({
+      id,
+      ...plan,
+      is_current: id === currentPlan
+    }));
+
+    res.json(plans);
   } catch (error) {
-    console.error('Get plans error:', error);
-    return res.status(500).json({ error: 'Failed to get subscription plans' });
+    console.error('Error getting plans:', error);
+    res.status(500).json({ error: 'Failed to get subscription plans' });
   }
 };
 
@@ -87,50 +36,49 @@ const getPlans = async (req, res) => {
  */
 const getCurrentSubscription = async (req, res) => {
   try {
+    const businessId = req.business.id;
+
+    // Get the current subscription
     const subscription = await Subscription.findOne({
       where: {
-        business_id: req.business.id,
-        status: { [Op.in]: ['active', 'trialing', 'past_due'] }
-      }
+        business_id: businessId,
+        status: ['active', 'trialing'],
+      },
+      order: [['created_at', 'DESC']]
     });
 
-    if (!subscription) {
-      return res.json({
-        subscription: {
-          tier: 'free',
-          status: 'active',
-          features: SUBSCRIPTION_PLANS.free.features,
-          limits: SUBSCRIPTION_PLANS.free.limits
-        }
-      });
-    }
+    // Get the business details
+    const business = await Business.findByPk(businessId);
 
-    // If subscription exists in Stripe, get additional details
-    let stripeSubscription = null;
-    if (subscription.stripeSubscriptionId) {
-      try {
-        stripeSubscription = await stripe.subscriptions.retrieve(subscription.stripeSubscriptionId);
-      } catch (stripeError) {
-        console.error('Stripe subscription retrieval error:', stripeError);
-      }
-    }
+    // Get the plan details
+    const currentPlan = SUBSCRIPTION_PLANS[business.subscription_tier];
 
-    return res.json({
-      subscription: {
+    const response = {
+      subscription: subscription ? {
         id: subscription.id,
-        tier: subscription.tier,
         status: subscription.status,
-        features: SUBSCRIPTION_PLANS[subscription.tier].features,
-        limits: SUBSCRIPTION_PLANS[subscription.tier].limits,
-        stripeDetails: stripeSubscription ? {
-          currentPeriodEnd: new Date(stripeSubscription.current_period_end * 1000),
-          cancelAtPeriodEnd: stripeSubscription.cancel_at_period_end
-        } : null
+        plan_id: subscription.plan_id,
+        current_period_start: subscription.current_period_start,
+        current_period_end: subscription.current_period_end,
+        cancel_at_period_end: subscription.cancel_at_period_end,
+        amount: subscription.amount,
+        currency: subscription.currency,
+        interval: subscription.interval
+      } : null,
+      current_plan: {
+        tier: business.subscription_tier,
+        name: currentPlan.name,
+        listing_limit: business.listing_limit,
+        highlight_credits: business.highlight_credits,
+        used_listings: business.used_listings,
+        features: currentPlan.features
       }
-    });
+    };
+
+    res.json(response);
   } catch (error) {
-    console.error('Get current subscription error:', error);
-    return res.status(500).json({ error: 'Failed to get current subscription' });
+    console.error('Error getting current subscription:', error);
+    res.status(500).json({ error: 'Failed to get current subscription' });
   }
 };
 
@@ -165,28 +113,13 @@ const createSubscriptionCheckout = async (req, res) => {
     const { planId } = req.body;
 
     if (!['smart', 'pro'].includes(planId)) {
-      return res.status(400).json({ error: 'Invalid plan selected' });
+      return res.status(400).json({ 
+        success: false,
+        error: 'Invalid plan selected' 
+      });
     }
 
     const plan = SUBSCRIPTION_PLANS[planId];
-
-    // Validate price ID exists
-    if (!plan.stripePriceId) {
-      console.error(`Missing Stripe Price ID for plan: ${planId}`);
-      return res.status(500).json({ 
-        error: 'Configuration error',
-        message: 'Subscription plans are not properly configured. Please contact support.'
-      });
-    }
-
-    // Validate price ID format
-    if (!plan.stripePriceId.startsWith('price_')) {
-      console.error(`Invalid Stripe Price ID format for plan: ${planId}`);
-      return res.status(500).json({ 
-        error: 'Configuration error',
-        message: 'Invalid price configuration. Please contact support.'
-      });
-    }
 
     // Create or get Stripe customer
     let stripeCustomerId = req.business.stripe_customer_id;
@@ -200,8 +133,6 @@ const createSubscriptionCheckout = async (req, res) => {
       stripeCustomerId = customer.id;
       await req.business.update({ stripe_customer_id: stripeCustomerId });
     }
-
-    console.log(`Creating checkout session for plan ${planId} with price ID ${plan.stripePriceId}`);
 
     // Create checkout session
     const session = await stripe.checkout.sessions.create({
@@ -219,22 +150,15 @@ const createSubscriptionCheckout = async (req, res) => {
       }
     });
 
-    return res.json({ url: session.url });
+    return res.json({
+      success: true,
+      url: session.url
+    });
   } catch (error) {
     console.error('Create subscription checkout error:', error);
-    
-    // Handle specific Stripe errors
-    if (error.type === 'StripeInvalidRequestError') {
-      return res.status(400).json({ 
-        error: 'Invalid request',
-        message: 'Could not create subscription. Please check plan configuration.',
-        details: error.message
-      });
-    }
-    
     return res.status(500).json({ 
-      error: 'Failed to create checkout session',
-      message: 'An error occurred while setting up the subscription.'
+      success: false,
+      error: error.message || 'Failed to create subscription checkout'
     });
   }
 };
@@ -251,24 +175,39 @@ const cancelCurrentSubscription = async (req, res) => {
       }
     });
 
-    if (!subscription || !subscription.stripeSubscriptionId) {
-      return res.status(404).json({ error: 'No active subscription found' });
+    if (!subscription || !subscription.stripe_subscription_id) {
+      return res.status(404).json({ 
+        success: false,
+        error: 'No active subscription found' 
+      });
     }
 
     // Cancel at period end in Stripe
-    await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
+    await stripe.subscriptions.update(subscription.stripe_subscription_id, {
       cancel_at_period_end: true
     });
 
     // Update local subscription status
     await subscription.update({
-      status: 'canceled'
+      status: 'canceled',
+      cancel_at_period_end: true
     });
 
-    return res.json({ message: 'Subscription cancelled successfully' });
+    // Update business to free tier at end of period
+    await req.business.update({
+      subscription_tier: 'free'
+    });
+
+    return res.json({ 
+      success: true,
+      message: 'Subscription cancelled successfully' 
+    });
   } catch (error) {
     console.error('Cancel subscription error:', error);
-    return res.status(500).json({ error: 'Failed to cancel subscription' });
+    return res.status(500).json({ 
+      success: false,
+      error: error.message || 'Failed to cancel subscription'
+    });
   }
 };
 
@@ -351,6 +290,149 @@ const changePlan = async (req, res) => {
   }
 };
 
+/**
+ * Get all transactions with pagination and filtering
+ */
+const getAllTransactions = async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 10,
+      type,
+      status,
+      startDate,
+      endDate,
+      sortBy = 'created_at',
+      sortOrder = 'DESC'
+    } = req.query;
+
+    // Build where clause
+    const where = {
+      business_id: req.business.id
+    };
+
+    // Add type filter
+    if (type) {
+      where.type = type;
+    }
+
+    // Add status filter
+    if (status) {
+      where.status = status;
+    }
+
+    // Add date range filter
+    if (startDate || endDate) {
+      where.created_at = {};
+      if (startDate) {
+        where.created_at[Op.gte] = new Date(startDate);
+      }
+      if (endDate) {
+        where.created_at[Op.lte] = new Date(endDate);
+      }
+    }
+
+    // Calculate offset
+    const offset = (page - 1) * limit;
+
+    // Get transactions with pagination
+    const { count, rows: transactions } = await Transaction.findAndCountAll({
+      where,
+      include: [{
+        model: Subscription,
+        as: 'subscription',
+        attributes: ['plan_id', 'status', 'current_period_start', 'current_period_end']
+      }],
+      order: [[sortBy, sortOrder]],
+      limit: parseInt(limit),
+      offset: parseInt(offset)
+    });
+
+    // Calculate pagination metadata
+    const totalPages = Math.ceil(count / limit);
+    const hasNextPage = page < totalPages;
+    const hasPreviousPage = page > 1;
+
+    return res.json({
+      transactions,
+      pagination: {
+        total: count,
+        totalPages,
+        currentPage: parseInt(page),
+        limit: parseInt(limit),
+        hasNextPage,
+        hasPreviousPage
+      },
+      filters: {
+        type,
+        status,
+        startDate,
+        endDate
+      }
+    });
+  } catch (error) {
+    console.error('Get all transactions error:', error);
+    return res.status(500).json({ error: 'Failed to get transactions' });
+  }
+};
+
+const getInvoiceHistory = async (req, res) => {
+  try {
+    const businessId = req.business.id;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const offset = (page - 1) * limit;
+
+    const { count, rows: invoices } = await Invoice.findAndCountAll({
+      where: { business_id: businessId },
+      order: [['created_at', 'DESC']],
+      limit,
+      offset,
+      include: [{
+        model: Subscription,
+        as: 'subscription',
+        attributes: ['plan_id', 'status']
+      }]
+    });
+
+    const totalPages = Math.ceil(count / limit);
+
+    res.json({
+      success: true,
+      data: {
+        invoices: invoices.map(invoice => ({
+          id: invoice.id,
+          amount: invoice.amount,
+          currency: invoice.currency,
+          status: invoice.status,
+          payment_status: invoice.payment_status,
+          billing_reason: invoice.billing_reason,
+          invoice_pdf: invoice.invoice_pdf,
+          hosted_invoice_url: invoice.hosted_invoice_url,
+          period_start: invoice.period_start,
+          period_end: invoice.period_end,
+          created_at: invoice.created_at,
+          paid_at: invoice.paid_at,
+          plan: invoice.subscription?.plan_id || 'unknown',
+          subscription_status: invoice.subscription?.status
+        })),
+        pagination: {
+          total: count,
+          totalPages,
+          currentPage: page,
+          limit
+        }
+      }
+    });
+  } catch (error) {
+    logger.error('Error fetching invoice history:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch invoice history'
+    });
+  }
+};
+
 module.exports = {
   getPlans,
   getCurrentSubscription,
@@ -358,5 +440,7 @@ module.exports = {
   createSubscriptionCheckout,
   cancelCurrentSubscription,
   reactivateCancelledSubscription,
-  changePlan
+  changePlan,
+  getAllTransactions,
+  getInvoiceHistory
 }; 

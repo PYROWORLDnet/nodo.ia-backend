@@ -57,7 +57,7 @@ async function inviteTeamMember(req, res) {
     // Check if email is already a team member (active or invited)
     const existingMember = await TeamMember.findOne({ 
       where: { 
-        businessId: existingBusiness.id, 
+        business_id: existingBusiness.id, 
         email,
         status: { [Op.in]: ['active', 'invited', 'pending'] }
       } 
@@ -78,33 +78,33 @@ async function inviteTeamMember(req, res) {
 
     // Create team member
     const teamMember = await TeamMember.create({
-      businessId: existingBusiness.id,
+      business_id: existingBusiness.id,
       email,
-      firstName,
-      lastName,
+      first_name: firstName,
+      last_name: lastName,
       role,
-      canManageTeam,
-      canManageSubscription,
-      canManageProducts,
-      canViewAnalytics,
-      invitationToken,
-      invitationExpires,
+      can_manage_team: canManageTeam,
+      can_manage_subscription: canManageSubscription,
+      can_manage_products: canManageProducts,
+      can_view_analytics: canViewAnalytics,
+      invitation_token: invitationToken,
+      invitation_expires: invitationExpires,
       status: 'invited',
-      passwordHash: temporaryPasswordHash // Set temporary password hash
+      password_hash: temporaryPasswordHash // Set temporary password hash
     });
 
     // Log successful creation
     console.log('Team member created:', {
       id: teamMember.id,
       email: teamMember.email,
-      businessId: teamMember.businessId
+      businessId: teamMember.business_id
     });
 
     // Send invitation email
     await sendEmail(email, teamMemberInvitationEmail({
-      businessName: existingBusiness.name,
+      businessName: existingBusiness.business_name,
       teamMemberName: `${firstName} ${lastName}`,
-      inviterName: existingBusiness.ownerName,
+      inviterName: existingBusiness.owner_name,
       role,
       invitationUrl: `${process.env.FRONTEND_URL}/team/accept-invitation?token=${invitationToken}`
     }));
@@ -114,8 +114,8 @@ async function inviteTeamMember(req, res) {
       teamMember: {
         id: teamMember.id,
         email: teamMember.email,
-        firstName: teamMember.firstName,
-        lastName: teamMember.lastName,
+        firstName: teamMember.first_name,
+        lastName: teamMember.last_name,
         role: teamMember.role,
         status: teamMember.status,
         createdAt: teamMember.createdAt
@@ -144,16 +144,22 @@ async function acceptInvitation(req, res) {
       return res.status(400).json({ error: 'Invitation token and password are required' });
     }
 
+    // Validate password strength
+    if (password.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters long' });
+    }
+
     // Find team member with this token
     const teamMember = await TeamMember.findOne({
       where: {
-        invitationToken: token,
-        invitationExpires: { [Op.gt]: new Date() },
+        invitation_token: token,
+        invitation_expires: { [Op.gt]: new Date() },
         status: 'invited'
       },
       include: [{ 
         model: Business,
-        as: 'business'
+        as: 'business',
+        attributes: ['id', 'business_name', 'owner_name', 'email']
       }]
     });
 
@@ -169,11 +175,11 @@ async function acceptInvitation(req, res) {
 
     // Update team member
     await teamMember.update({
-      passwordHash: hashedPassword,
-      invitationToken: null,
-      invitationExpires: null,
+      password_hash: hashedPassword,
+      invitation_token: null,
+      invitation_expires: null,
       status: 'active',
-      currentSessionId: sessionId
+      current_session_id: sessionId
     });
 
     // Generate token with team member info
@@ -184,14 +190,21 @@ async function acceptInvitation(req, res) {
       token: authToken,
       business: {
         id: teamMember.business.id,
-        name: teamMember.business.businessName
+        name: teamMember.business.business_name,
+        ownerName: teamMember.business.owner_name
       },
       teamMember: {
         id: teamMember.id,
-        firstName: teamMember.firstName,
-        lastName: teamMember.lastName,
+        firstName: teamMember.first_name,
+        lastName: teamMember.last_name,
         email: teamMember.email,
-        role: teamMember.role
+        role: teamMember.role,
+        permissions: {
+          canManageTeam: teamMember.can_manage_team,
+          canManageSubscription: teamMember.can_manage_subscription,
+          canManageProducts: teamMember.can_manage_products,
+          canViewAnalytics: teamMember.can_view_analytics
+        }
       },
       sessionId
     });
@@ -274,7 +287,7 @@ async function updateTeamMember(req, res) {
     const teamMember = await TeamMember.findOne({
       where: {
         id,
-        businessId: business.id,
+        business_id: business.id,
         status: { [Op.in]: ['active', 'invited'] }
       }
     });
@@ -286,10 +299,10 @@ async function updateTeamMember(req, res) {
     // Update team member
     await teamMember.update({
       role: role || teamMember.role,
-      canManageTeam: canManageTeam !== undefined ? canManageTeam : teamMember.canManageTeam,
-      canManageSubscription: canManageSubscription !== undefined ? canManageSubscription : teamMember.canManageSubscription,
-      canManageProducts: canManageProducts !== undefined ? canManageProducts : teamMember.canManageProducts,
-      canViewAnalytics: canViewAnalytics !== undefined ? canViewAnalytics : teamMember.canViewAnalytics
+      can_manage_team: canManageTeam !== undefined ? canManageTeam : teamMember.can_manage_team,
+      can_manage_subscription: canManageSubscription !== undefined ? canManageSubscription : teamMember.can_manage_subscription,
+      can_manage_products: canManageProducts !== undefined ? canManageProducts : teamMember.can_manage_products,
+      can_view_analytics: canViewAnalytics !== undefined ? canViewAnalytics : teamMember.can_view_analytics
     });
 
     return res.status(200).json({
@@ -300,10 +313,10 @@ async function updateTeamMember(req, res) {
         email: teamMember.email,
         role: teamMember.role,
         status: teamMember.status,
-        canManageTeam: teamMember.canManageTeam,
-        canManageSubscription: teamMember.canManageSubscription,
-        canManageProducts: teamMember.canManageProducts,
-        canViewAnalytics: teamMember.canViewAnalytics
+        canManageTeam: teamMember.can_manage_team,
+        canManageSubscription: teamMember.can_manage_subscription,
+        canManageProducts: teamMember.can_manage_products,
+        canViewAnalytics: teamMember.can_view_analytics
       }
     });
   } catch (error) {
@@ -324,7 +337,7 @@ async function removeTeamMember(req, res) {
     const teamMember = await TeamMember.findOne({
       where: {
         id,
-        businessId: business.id,
+        business_id: business.id,
         status: { [Op.in]: ['active', 'invited', 'pending'] }
       }
     });
@@ -336,9 +349,9 @@ async function removeTeamMember(req, res) {
     // Update team member status to inactive instead of removed
     await teamMember.update({
       status: 'inactive',
-      invitationToken: null,
-      invitationExpires: null,
-      currentSessionId: null
+      invitation_token: null,
+      invitation_expires: null,
+      current_session_id: null
     });
 
     return res.status(200).json({
@@ -362,7 +375,7 @@ async function resendInvitation(req, res) {
     const teamMember = await TeamMember.findOne({
       where: {
         id,
-        businessId: business.id,
+        business_id: business.id,
         status: 'invited'
       }
     });
@@ -378,8 +391,8 @@ async function resendInvitation(req, res) {
 
     // Update team member
     await teamMember.update({
-      invitationToken,
-      invitationTokenExpires
+      invitation_token: invitationToken,
+      invitation_expires: invitationTokenExpires
     });
 
     // Send invitation email
@@ -400,11 +413,91 @@ async function resendInvitation(req, res) {
   }
 }
 
+/**
+ * Login team member
+ */
+async function loginTeamMember(req, res) {
+  try {
+    const { email, password } = req.body;
+
+    // Validate required fields
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+
+    // Find team member
+    const teamMember = await TeamMember.findOne({
+      where: {
+        email,
+        status: 'active'
+      },
+      include: [{
+        model: Business,
+        as: 'business',
+        attributes: ['id', 'business_name', 'owner_name', 'email', 'status'],
+        where: {
+          status: 'active'
+        }
+      }]
+    });
+
+    if (!teamMember) {
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
+
+    // Verify password
+    const isPasswordValid = await comparePassword(password, teamMember.password_hash);
+    if (!isPasswordValid) {
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
+
+    // Generate session ID
+    const sessionId = generateSessionId();
+
+    // Update last login and session
+    await teamMember.update({
+      last_login: new Date(),
+      current_session_id: sessionId
+    });
+
+    // Generate token with team member info
+    const authToken = generateBusinessToken(teamMember.business, teamMember);
+
+    return res.status(200).json({
+      message: 'Login successful',
+      token: authToken,
+      business: {
+        id: teamMember.business.id,
+        name: teamMember.business.business_name,
+        ownerName: teamMember.business.owner_name
+      },
+      teamMember: {
+        id: teamMember.id,
+        firstName: teamMember.first_name,
+        lastName: teamMember.last_name,
+        email: teamMember.email,
+        role: teamMember.role,
+        permissions: {
+          canManageTeam: teamMember.can_manage_team,
+          canManageSubscription: teamMember.can_manage_subscription,
+          canManageProducts: teamMember.can_manage_products,
+          canViewAnalytics: teamMember.can_view_analytics
+        }
+      },
+      sessionId
+    });
+  } catch (error) {
+    console.error('Team member login error:', error);
+    return res.status(500).json({ error: 'Failed to login' });
+  }
+}
+
 module.exports = {
   inviteTeamMember,
   acceptInvitation,
   getTeamMembers,
   updateTeamMember,
   removeTeamMember,
-  resendInvitation
+  resendInvitation,
+  loginTeamMember
 }; 

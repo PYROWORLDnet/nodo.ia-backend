@@ -1,0 +1,467 @@
+{
+  "info": {
+    "name": "Nodo API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "API collection for Nodo's subscription-based listing management system"
+  },
+  "item": [
+    {
+      "name": "Subscriptions",
+      "item": [
+        {
+          "name": "Get Plans",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/subscriptions/plans",
+              "host": ["{{BASE_URL}}"],
+              "path": ["subscriptions", "plans"]
+            },
+            "description": "Get available subscription plans. Free plan allows 3 listings, Smart plan allows more listings with basic features, Pro plan includes all features."
+          }
+        },
+        {
+          "name": "Get Current Subscription",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/subscriptions/current",
+              "host": ["{{BASE_URL}}"],
+              "path": ["subscriptions", "current"]
+            },
+            "description": "Get details of current subscription including listing limits and features"
+          }
+        },
+        {
+          "name": "Create Subscription (Free Plan)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{TOKEN}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"planId\": \"{{PLAN_FREE}}\",\n  \"successUrl\": \"http://localhost:3000/success\",\n  \"cancelUrl\": \"http://localhost:3000/cancel\"\n}"
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/subscriptions/checkout",
+              "host": ["{{BASE_URL}}"],
+              "path": ["subscriptions", "checkout"]
+            },
+            "description": "Start with free plan (3 listings limit)"
+          }
+        },
+        {
+          "name": "Create Subscription (Smart Plan)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{TOKEN}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"planId\": \"{{PLAN_SMART}}\",\n  \"successUrl\": \"http://localhost:3000/success\",\n  \"cancelUrl\": \"http://localhost:3000/cancel\"\n}"
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/subscriptions/checkout",
+              "host": ["{{BASE_URL}}"],
+              "path": ["subscriptions", "checkout"]
+            },
+            "description": "Subscribe to Smart plan for more listings and basic features"
+          }
+        },
+        {
+          "name": "Create Subscription (Pro Plan)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{TOKEN}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"planId\": \"{{PLAN_PRO}}\",\n  \"successUrl\": \"http://localhost:3000/success\",\n  \"cancelUrl\": \"http://localhost:3000/cancel\"\n}"
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/subscriptions/checkout",
+              "host": ["{{BASE_URL}}"],
+              "path": ["subscriptions", "checkout"]
+            },
+            "description": "Subscribe to Pro plan for unlimited listings and all features"
+          }
+        },
+        {
+          "name": "Cancel Subscription",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/subscriptions/cancel",
+              "host": ["{{BASE_URL}}"],
+              "path": ["subscriptions", "cancel"]
+            },
+            "description": "Cancel current subscription (will revert to free plan with 3 listings limit)"
+          }
+        },
+        {
+          "name": "Reactivate Subscription",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/subscriptions/reactivate",
+              "host": ["{{BASE_URL}}"],
+              "path": ["subscriptions", "reactivate"]
+            },
+            "description": "Reactivate a cancelled subscription before it expires"
+          }
+        },
+        {
+          "name": "Change Plan",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{TOKEN}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"newPlanId\": \"{{PLAN_PRO}}\"\n}"
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/subscriptions/change-plan",
+              "host": ["{{BASE_URL}}"],
+              "path": ["subscriptions", "change-plan"]
+            },
+            "description": "Upgrade or downgrade subscription plan"
+          }
+        }
+      ],
+      "description": "Manage subscription plans and their features"
+    },
+    {
+      "name": "Listings",
+      "item": [
+        {
+          "name": "Create Listing (Free Plan - Limited to 3)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": [],
+                  "description": "Image file for the listing"
+                },
+                {
+                  "key": "title",
+                  "value": "BMW 5 Series 2022",
+                  "type": "text"
+                },
+                {
+                  "key": "description",
+                  "value": "Luxury sedan in excellent condition",
+                  "type": "text"
+                },
+                {
+                  "key": "price",
+                  "value": "45000",
+                  "type": "text"
+                },
+                {
+                  "key": "category",
+                  "value": "automotive",
+                  "type": "text"
+                },
+                {
+                  "key": "make",
+                  "value": "BMW",
+                  "type": "text"
+                },
+                {
+                  "key": "model",
+                  "value": "5 Series",
+                  "type": "text"
+                },
+                {
+                  "key": "year",
+                  "value": "2022",
+                  "type": "text"
+                },
+                {
+                  "key": "mileage",
+                  "value": "15000",
+                  "type": "text"
+                },
+                {
+                  "key": "transmission",
+                  "value": "automatic",
+                  "type": "text"
+                },
+                {
+                  "key": "fuelType",
+                  "value": "gasoline",
+                  "type": "text"
+                },
+                {
+                  "key": "condition",
+                  "value": "excellent",
+                  "type": "text"
+                },
+                {
+                  "key": "city",
+                  "value": "Miami",
+                  "type": "text"
+                },
+                {
+                  "key": "state",
+                  "value": "FL",
+                  "type": "text"
+                },
+                {
+                  "key": "country",
+                  "value": "USA",
+                  "type": "text"
+                },
+                {
+                  "key": "phone",
+                  "value": "555-0123",
+                  "type": "text"
+                },
+                {
+                  "key": "email",
+                  "value": "seller@example.com",
+                  "type": "text"
+                },
+                {
+                  "key": "tags",
+                  "value": "luxury,sedan,german",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/listings",
+              "host": ["{{BASE_URL}}"],
+              "path": ["listings"]
+            },
+            "description": "Create a new listing. Free plan is limited to 3 listings. Response includes listingsRemaining count."
+          }
+        },
+        {
+          "name": "Get Business Listings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/listings/business/{{BUSINESS_ID}}?page=1&limit=10",
+              "host": ["{{BASE_URL}}"],
+              "path": ["listings", "business", "{{BUSINESS_ID}}"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "Get all listings for a business. Shows total count and available slots based on subscription."
+          }
+        },
+        {
+          "name": "Get All Listings",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/listings?page=1&limit=10&category=automotive&minPrice=10000&maxPrice=50000",
+              "host": ["{{BASE_URL}}"],
+              "path": ["listings"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                },
+                {
+                  "key": "category",
+                  "value": "automotive",
+                  "disabled": true
+                },
+                {
+                  "key": "minPrice",
+                  "value": "10000",
+                  "disabled": true
+                },
+                {
+                  "key": "maxPrice",
+                  "value": "50000",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Get all public listings with optional filters"
+          }
+        },
+        {
+          "name": "Get Single Listing",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/listings/{{LISTING_ID}}",
+              "host": ["{{BASE_URL}}"],
+              "path": ["listings", "{{LISTING_ID}}"]
+            },
+            "description": "Get details of a specific listing"
+          }
+        },
+        {
+          "name": "Update Listing",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "title",
+                  "value": "Updated BMW 5 Series 2022",
+                  "type": "text"
+                },
+                {
+                  "key": "description",
+                  "value": "Updated luxury sedan description",
+                  "type": "text"
+                },
+                {
+                  "key": "price",
+                  "value": "46000",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/listings/{{LISTING_ID}}",
+              "host": ["{{BASE_URL}}"],
+              "path": ["listings", "{{LISTING_ID}}"]
+            },
+            "description": "Update an existing listing"
+          }
+        },
+        {
+          "name": "Delete Listing",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/listings/{{LISTING_ID}}",
+              "host": ["{{BASE_URL}}"],
+              "path": ["listings", "{{LISTING_ID}}"]
+            },
+            "description": "Delete a listing. This will free up a slot in your listing limit."
+          }
+        }
+      ],
+      "description": "Manage listings within subscription limits"
+    }
+  ]
+} 

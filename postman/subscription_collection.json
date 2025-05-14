@@ -1,0 +1,291 @@
+{
+	"info": {
+		"_postman_id": "subscription-api-collection",
+		"name": "Nodo.ia Subscription API",
+		"description": "API endpoints for managing business subscriptions and plans",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Subscriptions",
+			"item": [
+				{
+					"name": "Create Subscription",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"planId\": \"smart\",\n    \"paymentMethodId\": \"pm_card_visa\",\n    \"interval\": \"month\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/subscriptions",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "subscriptions"]
+						},
+						"description": "Create a new subscription for a business"
+					}
+				},
+				{
+					"name": "Get Current Subscription",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/subscriptions/current",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "subscriptions", "current"]
+						},
+						"description": "Get the current active subscription for the business"
+					}
+				},
+				{
+					"name": "Update Subscription",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"planId\": \"pro\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/subscriptions/{{subscriptionId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "subscriptions", "{{subscriptionId}}"]
+						},
+						"description": "Update an existing subscription (e.g., change plan)"
+					}
+				},
+				{
+					"name": "Cancel Subscription",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/subscriptions/{{subscriptionId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "subscriptions", "{{subscriptionId}}"]
+						},
+						"description": "Cancel an active subscription"
+					}
+				},
+				{
+					"name": "Resume Subscription",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/subscriptions/{{subscriptionId}}/resume",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "subscriptions", "{{subscriptionId}}", "resume"]
+						},
+						"description": "Resume a canceled subscription if within the billing period"
+					}
+				}
+			]
+		},
+		{
+			"name": "Plans",
+			"item": [
+				{
+					"name": "List Plans",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/plans",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "plans"]
+						},
+						"description": "Get all available subscription plans"
+					}
+				},
+				{
+					"name": "Get Plan Details",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/plans/{{planId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "plans", "{{planId}}"]
+						},
+						"description": "Get detailed information about a specific plan"
+					}
+				}
+			]
+		},
+		{
+			"name": "Usage & Credits",
+			"item": [
+				{
+					"name": "Get Usage Stats",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/subscriptions/usage",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "subscriptions", "usage"]
+						},
+						"description": "Get current usage statistics (listings, credits)"
+					}
+				},
+				{
+					"name": "Purchase Additional Credits",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"creditAmount\": 10,\n    \"paymentMethodId\": \"pm_card_visa\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/subscriptions/credits/purchase",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "subscriptions", "credits", "purchase"]
+						},
+						"description": "Purchase additional highlight credits"
+					}
+				}
+			]
+		},
+		{
+			"name": "Webhooks",
+			"item": [
+				{
+					"name": "Stripe Webhook",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Stripe-Signature",
+								"value": "{{stripeSignature}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"type\": \"customer.subscription.updated\",\n    \"data\": {\n        \"object\": {\n            \"id\": \"sub_xyz\",\n            \"status\": \"active\"\n        }\n    }\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/webhooks/stripe",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "webhooks", "stripe"]
+						},
+						"description": "Webhook endpoint for Stripe events"
+					}
+				}
+			]
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:3000",
+			"type": "string"
+		},
+		{
+			"key": "token",
+			"value": "your_jwt_token_here",
+			"type": "string"
+		},
+		{
+			"key": "subscriptionId",
+			"value": "your_subscription_id",
+			"type": "string"
+		},
+		{
+			"key": "planId",
+			"value": "plan_id",
+			"type": "string"
+		},
+		{
+			"key": "stripeSignature",
+			"value": "stripe_webhook_signature",
+			"type": "string"
+		}
+	]
+} 

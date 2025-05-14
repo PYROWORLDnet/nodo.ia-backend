@@ -9,7 +9,7 @@ const plans = {
     features: {
       listingLimit: 3,
       includesAnalytics: false,
-      monthlyHighlightQuota: 0,
+      monthlyHighlightQuota: 3,
       promoCreditsDiscount: 0,
       patchColor: 'grey',
       displayPriority: 1,
@@ -22,7 +22,7 @@ const plans = {
     features: {
       listingLimit: null, // unlimited
       includesAnalytics: true,
-      monthlyHighlightQuota: 0,
+      monthlyHighlightQuota: 10,
       promoCreditsDiscount: 0,
       patchColor: 'blue',
       displayPriority: 2,
@@ -35,7 +35,7 @@ const plans = {
     features: {
       listingLimit: null, // unlimited
       includesAnalytics: true,
-      monthlyHighlightQuota: 3,
+      monthlyHighlightQuota: 30,
       promoCreditsDiscount: 50, // 50% discount
       patchColor: 'gold',
       displayPriority: 3,

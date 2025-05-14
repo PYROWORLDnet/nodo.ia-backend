@@ -1,8 +1,8 @@
 const jwt = require('jsonwebtoken');
-const { User } = require('../db');
+const { Business } = require('../db/init');
 
 /**
- * Middleware to authenticate user using JWT token
+ * Middleware to authenticate business using JWT token
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
  * @param {Function} next - Express next function
@@ -21,18 +21,22 @@ async function authMiddleware(req, res, next) {
     // Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     
-    // Find user by id
-    const user = await User.findByPk(decoded.userId);
+    // Find business by id
+    const business = await Business.findByPk(decoded.id);
     
-    if (!user) {
-      return res.status(401).json({ error: 'Unauthorized: User not found' });
+    if (!business) {
+      return res.status(401).json({ error: 'Unauthorized: Business not found' });
+    }
+
+    if (business.status !== 'active') {
+      return res.status(401).json({ error: 'Unauthorized: Business account is not active' });
     }
     
     // Update last login time
-    await user.update({ lastLogin: new Date() });
+    await business.update({ lastLogin: new Date() });
     
-    // Add user to request object
-    req.user = user;
+    // Add business to request object
+    req.user = business;
     
     next();
   } catch (error) {
@@ -42,15 +46,16 @@ async function authMiddleware(req, res, next) {
 }
 
 /**
- * Generate a JWT token for the user
- * @param {Object} user - User object
+ * Generate a JWT token for the business
+ * @param {Object} business - Business object
  * @returns {String} - JWT token
  */
-function generateToken(user) {
+function generateToken(business) {
   return jwt.sign(
     { 
-      userId: user.id,
-      email: user.email 
+      id: business.id,
+      email: business.email,
+      type: 'business'
     }, 
     process.env.JWT_SECRET, 
     { 

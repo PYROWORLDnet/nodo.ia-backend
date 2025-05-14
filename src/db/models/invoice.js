@@ -1,21 +1,21 @@
 const { Model, DataTypes } = require('sequelize');
 
 module.exports = (sequelize) => {
-  class Transaction extends Model {
+  class Invoice extends Model {
     static associate(models) {
       // Define associations
-      Transaction.belongsTo(models.Business, {
+      Invoice.belongsTo(models.Business, {
         foreignKey: 'business_id',
         as: 'business'
       });
-      Transaction.belongsTo(models.Subscription, {
+      Invoice.belongsTo(models.Subscription, {
         foreignKey: 'subscription_id',
         as: 'subscription'
       });
     }
   }
 
-  Transaction.init({
+  Invoice.init({
     id: {
       type: DataTypes.UUID,
       defaultValue: DataTypes.UUIDV4,
@@ -31,18 +31,20 @@ module.exports = (sequelize) => {
     },
     subscription_id: {
       type: DataTypes.UUID,
-      allowNull: true,
+      allowNull: false,
       references: {
         model: 'subscriptions',
         key: 'id'
       }
     },
-    type: {
+    stripe_invoice_id: {
       type: DataTypes.STRING,
       allowNull: false,
-      validate: {
-        isIn: [['subscription_new', 'subscription_renewal', 'subscription_cancel', 'subscription_update', 'subscription_payment_failed']]
-      }
+      unique: true
+    },
+    stripe_payment_intent_id: {
+      type: DataTypes.STRING,
+      allowNull: true
     },
     amount: {
       type: DataTypes.DECIMAL(10, 2),
@@ -57,15 +59,55 @@ module.exports = (sequelize) => {
       type: DataTypes.STRING,
       allowNull: false,
       validate: {
-        isIn: [['pending', 'completed', 'failed', 'refunded']]
+        isIn: [['draft', 'open', 'paid', 'uncollectible', 'void']]
       }
     },
-    stripe_payment_intent_id: {
+    billing_reason: {
       type: DataTypes.STRING,
       allowNull: true
     },
-    stripe_invoice_id: {
+    invoice_pdf: {
       type: DataTypes.STRING,
+      allowNull: true
+    },
+    hosted_invoice_url: {
+      type: DataTypes.STRING,
+      allowNull: true
+    },
+    payment_status: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      defaultValue: 'unpaid',
+      validate: {
+        isIn: [['paid', 'unpaid', 'no_payment_required']]
+      }
+    },
+    subtotal: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: false
+    },
+    tax: {
+      type: DataTypes.DECIMAL(10, 2),
+      defaultValue: 0
+    },
+    total: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: false
+    },
+    period_start: {
+      type: DataTypes.DATE,
+      allowNull: false
+    },
+    period_end: {
+      type: DataTypes.DATE,
+      allowNull: false
+    },
+    due_date: {
+      type: DataTypes.DATE,
+      allowNull: true
+    },
+    paid_at: {
+      type: DataTypes.DATE,
       allowNull: true
     },
     metadata: {
@@ -74,8 +116,8 @@ module.exports = (sequelize) => {
     }
   }, {
     sequelize,
-    modelName: 'Transaction',
-    tableName: 'transactions',
+    modelName: 'Invoice',
+    tableName: 'invoices',
     underscored: true,
     paranoid: true,
     timestamps: true,
@@ -87,19 +129,20 @@ module.exports = (sequelize) => {
         fields: ['subscription_id']
       },
       {
-        fields: ['type']
-      },
-      {
-        fields: ['status']
+        fields: ['stripe_invoice_id'],
+        unique: true
       },
       {
         fields: ['stripe_payment_intent_id']
       },
       {
-        fields: ['stripe_invoice_id']
+        fields: ['status']
+      },
+      {
+        fields: ['payment_status']
       }
     ]
   });
 
-  return Transaction;
+  return Invoice;
 }; 

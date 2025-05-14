@@ -1,12 +1,14 @@
 const { Business } = require('../db/init');
 const { Op } = require('sequelize');
+const axios = require('axios');
 const { 
   hashPassword, 
   verifyPassword,
   generateBusinessToken,
   generateVerificationToken,
   generatePasswordResetToken,
-  validateCedula
+  validateCedula,
+  generateSessionId
 } = require('../utils/businessAuth');
 const { sendEmail } = require('../utils/emailService');
 const { 
@@ -14,6 +16,10 @@ const {
   welcomeEmail,
   passwordResetEmail
 } = require('../utils/emailTemplates');
+const fs = require('fs');
+const fsp = require('fs').promises;
+const path = require('path');
+const { TeamMember } = require('../db/init');
 
 /**
  * Register a new business
@@ -24,20 +30,47 @@ const register = async (req, res, next) => {
       ownerName,
       businessName,
       identityNumber,
+      businessType,
+      businessCategory,
+      businessAddress,
+      businessPhone,
       email,
       password
     } = req.body;
 
     // Validate required fields
-    if (!ownerName || !businessName || !identityNumber || !email || !password) {
+    if (!ownerName || !businessName || !identityNumber || !businessType || !businessCategory || !businessAddress || !businessPhone || !email || !password) {
       return res.status(400).json({
         error: 'Missing required fields',
-        message: 'Please provide owner name, business name, identity number, email, and password'
+        message: 'Please provide owner name, business name, identity number, business type, business category, business address, business phone, email, and password'
       });
     }
 
-    // Validate identity number (Dominican Republic cedula)
-    console.log('Identity number:', identityNumber);
+    // Validate identity number format (must be 11 digits)
+    const cleanIdentityNumber = identityNumber.replace(/[^0-9]/g, '');
+    if (cleanIdentityNumber.length !== 11) {
+      return res.status(400).json({
+        error: 'Invalid identity number',
+        message: 'Identity number must be 11 digits'
+      });
+    }
+
+    // Validate cedula with government API
+    try {
+      const response = await axios.get(`https://api.digital.gob.do/v3/cedulas/${cleanIdentityNumber}/validate`);
+      if (!response.data.valid) {
+        return res.status(400).json({
+          error: 'Invalid identity number',
+          message: 'The provided identity number is not valid according to government records'
+        });
+      }
+    } catch (error) {
+      console.error('Error validating cedula:', error);
+      return res.status(500).json({
+        error: 'Validation error',
+        message: 'Invalid identity number'
+      });
+    }
 
     // Check if email already exists
     const existingBusiness = await Business.findOne({ where: { email } });
@@ -49,7 +82,7 @@ const register = async (req, res, next) => {
     }
 
     // Check if identity number already exists
-    const existingIdentity = await Business.findOne({ where: { identityNumber } });
+    const existingIdentity = await Business.findOne({ where: { identity_number: cleanIdentityNumber } });
     if (existingIdentity) {
       return res.status(409).json({
         error: 'Identity number already registered',
@@ -66,20 +99,21 @@ const register = async (req, res, next) => {
 
     // Create new business
     const business = await Business.create({
-      ownerName,
-      businessName,
-      identityNumber,
+      owner_name: ownerName,
+      business_name: businessName,
+      business_type: businessType,
+      business_category: businessCategory,
+      business_address: businessAddress,
+      business_phone: businessPhone,
+      identity_number: cleanIdentityNumber,
       email,
-      passwordHash: hashedPassword,
-      subscriptionTier: 'free',
+      password_hash: hashedPassword,
+      subscription_tier: 'free',
       status: 'pending_verification',
-      isVerified: false,
-      verificationToken,
-      verificationTokenExpires
+      is_verified: false,
+      verification_token: verificationToken,
+      verification_token_expires: verificationTokenExpires
     });
-
-    // Log token for debugging
-    console.log('Generated verification token:', verificationToken);
 
     // Send verification email
     await sendEmail(email, businessVerificationEmail({
@@ -92,10 +126,9 @@ const register = async (req, res, next) => {
       message: 'Business registered successfully. Please check your email to verify your account.',
       business: {
         id: business.id,
-        ownerName: business.ownerName,
-        businessName: business.businessName,
-        email: business.email,
-        verificationToken // Include token in response for testing
+        owner_name: business.owner_name,
+        business_name: business.business_name,
+        email: business.email
       }
     });
   } catch (error) {
@@ -116,25 +149,25 @@ const verifyEmail = async (req, res) => {
     // Debug: Check if token exists in database
     const tokenCheck = await Business.findOne({
       where: {
-        verificationToken: token
+        verification_token: token
       },
-      attributes: ['id', 'email', 'verificationToken', 'verificationTokenExpires', 'isVerified', 'status']
+      attributes: ['id', 'email', 'verification_token', 'verification_token_expires', 'is_verified', 'status']
     });
     
     console.log('Token check result:', tokenCheck ? {
       found: true,
       id: tokenCheck.id,
       email: tokenCheck.email,
-      isVerified: tokenCheck.isVerified,
+      isVerified: tokenCheck.is_verified,
       status: tokenCheck.status,
-      tokenExpires: tokenCheck.verificationTokenExpires
+      tokenExpires: tokenCheck.verification_token_expires
     } : 'Not found');
     
     // Find business with token and expiry
     const business = await Business.findOne({
       where: {
-        verificationToken: token,
-        verificationTokenExpires: { [Op.gt]: new Date() }
+        verification_token: token,
+        verification_token_expires: { [Op.gt]: new Date() }
       }
     });
     
@@ -150,15 +183,15 @@ const verifyEmail = async (req, res) => {
     
     // Update business
     await business.update({
-      isVerified: true,
+      is_verified: true,
       status: 'active',
-      verificationToken: null,
-      verificationTokenExpires: null
+      verification_token: null,
+      verification_token_expires: null
     });
     
     // Send welcome email
     await sendEmail(business.email, welcomeEmail({
-      businessName: business.businessName,
+      businessName: business.business_name,
       frontendUrl: process.env.FRONTEND_URL
     }));
     
@@ -187,7 +220,67 @@ const login = async (req, res) => {
   try {
     const { email, password } = req.body;
     
-    // Find business
+    // First try to find a team member
+    const teamMember = await TeamMember.findOne({
+      where: { 
+        email,
+        status: 'active'
+      },
+      include: [{
+        model: Business,
+        as: 'business',
+        attributes: ['id', 'business_name', 'owner_name', 'email', 'status'],
+        where: {
+          status: 'active'
+        }
+      }]
+    });
+
+    // If team member found, verify their password
+    if (teamMember) {
+      const isValidPassword = await verifyPassword(password, teamMember.password_hash);
+      
+      if (!isValidPassword) {
+        return res.status(401).json({
+          error: 'Unauthorized',
+          message: 'Invalid email or password'
+        });
+      }
+
+      // Generate token with both business and team member info
+      const token = generateBusinessToken(teamMember.business, teamMember);
+      
+      // Update last login
+      await teamMember.update({ 
+        last_login: new Date(),
+        current_session_id: generateSessionId()
+      });
+      
+      return res.json({
+        message: 'Login successful',
+        token,
+        business: {
+          id: teamMember.business.id,
+          name: teamMember.business.business_name,
+          ownerName: teamMember.business.owner_name
+        },
+        teamMember: {
+          id: teamMember.id,
+          firstName: teamMember.first_name,
+          lastName: teamMember.last_name,
+          email: teamMember.email,
+          role: teamMember.role,
+          permissions: {
+            canManageTeam: teamMember.can_manage_team,
+            canManageSubscription: teamMember.can_manage_subscription,
+            canManageProducts: teamMember.can_manage_products,
+            canViewAnalytics: teamMember.can_view_analytics
+          }
+        }
+      });
+    }
+    
+    // If no team member found, try to find a business
     const business = await Business.findOne({ where: { email } });
     
     if (!business) {
@@ -198,7 +291,7 @@ const login = async (req, res) => {
     }
     
     // Check password
-    const isValidPassword = await verifyPassword(password, business.passwordHash);
+    const isValidPassword = await verifyPassword(password, business.password_hash);
     
     if (!isValidPassword) {
       return res.status(401).json({
@@ -229,16 +322,16 @@ const login = async (req, res) => {
     const token = generateBusinessToken(business);
     
     // Update last login
-    await business.update({ lastLogin: new Date() });
+    await business.update({ last_login: new Date() });
     
     res.json({
       message: 'Login successful',
       token,
       business: {
         id: business.id,
-        name: business.businessName,
+        name: business.business_name,
         email: business.email,
-        subscriptionTier: business.subscriptionTier
+        subscription_tier: business.subscription_tier
       }
     });
   } catch (error) {
@@ -273,13 +366,13 @@ const requestPasswordReset = async (req, res) => {
     
     // Update business
     await business.update({
-      passwordResetToken: resetToken,
-      passwordResetTokenExpiry: resetTokenExpiry
+      password_reset_token: resetToken,
+      password_reset_token_expiry: resetTokenExpiry
     });
     
     // Send email
     await sendEmail(email, passwordResetEmail({
-      businessName: business.businessName,
+      businessName: business.business_name,
       resetToken,
       frontendUrl: process.env.FRONTEND_URL
     }));
@@ -306,8 +399,8 @@ const resetPassword = async (req, res) => {
     // Find business with token
     const business = await Business.findOne({
       where: {
-        passwordResetToken: token,
-        passwordResetTokenExpiry: { [Op.gt]: new Date() }
+        password_reset_token: token,
+        password_reset_token_expiry: { [Op.gt]: new Date() }
       }
     });
     
@@ -320,9 +413,9 @@ const resetPassword = async (req, res) => {
     
     // Update password
     await business.update({
-      passwordHash: await hashPassword(password),
-      passwordResetToken: null,
-      passwordResetTokenExpiry: null
+      password_hash: await hashPassword(password),
+      password_reset_token: null,
+      password_reset_token_expiry: null
     });
     
     res.json({
@@ -343,19 +436,35 @@ const resetPassword = async (req, res) => {
 const getProfile = async (req, res) => {
   try {
     const business = req.business;
+    console.log('Business:', business);
     
     res.json({
       id: business.id,
-      name: business.businessName,
+      owner_name: business.owner_name,
+      business_name: business.business_name,
+      identity_number: business.identity_number,
       email: business.email,
-      phone: business.phone,
-      owner: business.ownerName,
-      address: business.address,
-      subscriptionTier: business.subscriptionTier,
+      phone: business.business_phone,
+      address: business.business_address,
+      cedula: business.cedula, // Read-only field
+      idVerified: business.idVerified,
+      idVerificationDate: business.idVerificationDate,
+      logo: business.logo,
+      website: business.website,
+      description: business.description,
+      industry: business.industry,
+      subscription_tier: business.subscription_tier,
+      subscriptionStatus: business.subscriptionStatus,
+      subscriptionExpiresAt: business.subscriptionExpiresAt,
+      patchColor: business.patchColor,
+      highlightCredits: business.highlightCredits,
+      freeListingLimit: business.freeListingLimit,
+      proHighlightQuota: business.proHighlightQuota,
       status: business.status,
-      isVerified: business.isVerified,
+      isVerified: business.is_verified,
       createdAt: business.createdAt,
-      lastLogin: business.lastLogin
+      updatedAt: business.updatedAt,
+      lastLogin: business.last_login
     });
   } catch (error) {
     console.error('Get profile error:', error);
@@ -372,25 +481,63 @@ const getProfile = async (req, res) => {
 const updateProfile = async (req, res) => {
   try {
     const business = req.business;
-    const { name, phone, owner, address } = req.body;
+    const {
+      ownerName,
+      businessName,
+      phone,
+      address,
+      logo,
+      website,
+      description,
+      industry,
+      patchColor
+    } = req.body;
     
     // Update fields
     await business.update({
-      name: name || business.businessName,
-      phone: phone || business.phone,
-      owner: owner || business.ownerName,
-      address: address || business.address
+      owner_name: ownerName || business.owner_name,
+      business_name: businessName || business.business_name,
+      business_phone: phone || business.business_phone,
+      business_address: address || business.business_address,
+      logo: logo || business.logo,
+      website: website || business.website,
+      description: description || business.description,
+      industry: industry || business.industry,
+      patchColor: patchColor || business.patchColor
     });
+    
+    // Get updated business data
+    const updatedBusiness = await Business.findByPk(business.id);
     
     res.json({
       message: 'Profile updated successfully',
       business: {
-        id: business.id,
-        name: business.businessName,
-        email: business.email,
-        phone: business.phone,
-        owner: business.ownerName,
-        address: business.address
+        id: updatedBusiness.id,
+        owner_name: updatedBusiness.owner_name,
+        business_name: updatedBusiness.business_name,
+        identity_number: updatedBusiness.identity_number,
+        email: updatedBusiness.email,
+        phone: updatedBusiness.business_phone,
+        address: updatedBusiness.business_address,
+        cedula: updatedBusiness.cedula, // Read-only field
+        idVerified: updatedBusiness.idVerified,
+        idVerificationDate: updatedBusiness.idVerificationDate,
+        logo: updatedBusiness.logo,
+        website: updatedBusiness.website,
+        description: updatedBusiness.description,
+        industry: updatedBusiness.industry,
+        subscription_tier: updatedBusiness.subscription_tier,
+        subscriptionStatus: updatedBusiness.subscriptionStatus,
+        subscriptionExpiresAt: updatedBusiness.subscriptionExpiresAt,
+        patchColor: updatedBusiness.patchColor,
+        highlightCredits: updatedBusiness.highlightCredits,
+        freeListingLimit: updatedBusiness.freeListingLimit,
+        proHighlightQuota: updatedBusiness.proHighlightQuota,
+        status: updatedBusiness.status,
+        isVerified: updatedBusiness.is_verified,
+        createdAt: updatedBusiness.createdAt,
+        updatedAt: updatedBusiness.updatedAt,
+        lastLogin: updatedBusiness.last_login
       }
     });
   } catch (error) {
@@ -411,7 +558,7 @@ const changePassword = async (req, res) => {
     const { currentPassword, newPassword } = req.body;
     
     // Verify current password
-    const isValidPassword = await verifyPassword(currentPassword, business.passwordHash);
+    const isValidPassword = await verifyPassword(currentPassword, business.password_hash);
     
     if (!isValidPassword) {
       return res.status(400).json({
@@ -422,7 +569,7 @@ const changePassword = async (req, res) => {
     
     // Update password
     await business.update({
-      passwordHash: await hashPassword(newPassword)
+      password_hash: await hashPassword(newPassword)
     });
     
     res.json({
@@ -455,6 +602,154 @@ const logout = async (req, res) => {
   }
 };
 
+/**
+ * Upload profile picture
+ */
+const uploadProfilePicture = async (req, res) => {
+  try {
+    // Check if file was uploaded
+    if (!req.file) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'No file uploaded'
+      });
+    }
+
+    // Ensure upload directories exist
+    const uploadDir = path.join(__dirname, '../../uploads');
+    const profilePicturesDir = path.join(uploadDir, 'profile_pictures');
+
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir);
+    }
+    if (!fs.existsSync(profilePicturesDir)) {
+      fs.mkdirSync(profilePicturesDir);
+    }
+
+    const business = req.business;
+    
+    // Generate the URL for the uploaded file
+    const baseUrl = process.env.API_URL || `${req.protocol}://${req.get('host')}`;
+    const fileUrl = `${baseUrl}/api/auth/business/profile/picture/${req.file.filename}`;
+    
+    // Move file to correct location if needed
+    const finalPath = path.join(profilePicturesDir, req.file.filename);
+    if (req.file.path !== finalPath) {
+      fs.renameSync(req.file.path, finalPath);
+    }
+
+    // Update business profile with new logo URL
+    await business.update({
+      logo: fileUrl
+    });
+    
+    res.json({
+      message: 'Profile picture uploaded successfully',
+      logo: fileUrl
+    });
+  } catch (error) {
+    console.error('Upload profile picture error:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Failed to upload profile picture'
+    });
+  }
+};
+
+/**
+ * Serve profile picture
+ */
+const serveProfilePicture = (req, res) => {
+  try {
+    const { filename } = req.params;
+    const filePath = path.join(__dirname, '../../uploads/profile_pictures', filename);
+    
+    // Check if file exists
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).send('File not found');
+    }
+
+    // Set CORS headers
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    
+    // Set content type based on file extension
+    const ext = path.extname(filename).toLowerCase();
+    if (ext === '.png') {
+      res.setHeader('Content-Type', 'image/png');
+    } else if (ext === '.jpg' || ext === '.jpeg') {
+      res.setHeader('Content-Type', 'image/jpeg');
+    } else if (ext === '.gif') {
+      res.setHeader('Content-Type', 'image/gif');
+    }
+
+    // Read and send file
+    const fileStream = fs.createReadStream(filePath);
+    fileStream.pipe(res);
+  } catch (error) {
+    console.error('Error serving file:', error);
+    res.status(500).send('Error serving file');
+  }
+};
+
+/**
+ * Get user permissions
+ */
+const getPermissions = async (req, res) => {
+  try {
+    const { business, teamMember, permissions, isTeamMember } = req;
+
+    // Get subscription-based permissions
+    const subscriptionPermissions = {
+      canAccessSmartFeatures: business.subscription_tier !== 'free',
+      canAccessProFeatures: business.subscription_tier === 'pro',
+      hasUnlimitedListings: business.subscription_tier !== 'free',
+      listingLimit: business.listing_limit || 5,
+      highlightCredits: business.highlight_credits || 0
+    };
+
+    res.json({
+      isBusinessOwner: !isTeamMember,
+      isTeamMember,
+      role: teamMember ? teamMember.role : 'owner',
+      permissions: {
+        // Team/role based permissions
+        canManageTeam: permissions.canManageTeam,
+        canManageSubscription: permissions.canManageSubscription,
+        canManageProducts: permissions.canManageProducts,
+        canViewAnalytics: permissions.canViewAnalytics,
+        
+        // Subscription based permissions
+        ...subscriptionPermissions,
+
+        // Business status permissions
+        isVerified: business.is_verified,
+        isActive: business.status === 'active'
+      },
+      business: {
+        id: business.id,
+        name: business.business_name,
+        subscription: business.subscription_tier,
+        status: business.status
+      },
+      teamMember: teamMember ? {
+        id: teamMember.id,
+        firstName: teamMember.first_name,
+        lastName: teamMember.last_name,
+        email: teamMember.email,
+        role: teamMember.role
+      } : null
+    });
+  } catch (error) {
+    console.error('Get permissions error:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Failed to get permissions'
+    });
+  }
+};
+
 module.exports = {
   register,
   verifyEmail,
@@ -464,5 +759,8 @@ module.exports = {
   getProfile,
   updateProfile,
   changePassword,
-  logout
+  logout,
+  uploadProfilePicture,
+  serveProfilePicture,
+  getPermissions
 }; 

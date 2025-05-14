@@ -19,26 +19,27 @@ const generateBusinessToken = (business, teamMember = null) => {
   const payload = {
     id: business.id,
     email: business.email,
-    name: business.name,
-    type: 'business',
-    // If this is a team member login
-    teamMember: teamMember ? {
-      id: teamMember.id,
-      role: teamMember.role,
-      permissions: {
-        canManageTeam: teamMember.canManageTeam,
-        canManageSubscription: teamMember.canManageSubscription,
-        canManageProducts: teamMember.canManageProducts,
-        canViewAnalytics: teamMember.canViewAnalytics,
-      }
-    } : null,
-    subscriptionTier: business.subscriptionTier,
+    businessId: business.id
   };
 
-  // Set expiration based on environment - shorter for dev, longer for prod
-  const expiresIn = process.env.NODE_ENV === 'production' ? '7d' : '30d';
+  // If team member is provided, add their info to the token
+  if (teamMember) {
+    payload.teamMember = {
+      id: teamMember.id,
+      email: teamMember.email,
+      role: teamMember.role,
+      permissions: {
+        canManageTeam: teamMember.can_manage_team,
+        canManageSubscription: teamMember.can_manage_subscription,
+        canManageProducts: teamMember.can_manage_products,
+        canViewAnalytics: teamMember.can_view_analytics
+      }
+    };
+  }
 
-  return jwt.sign(payload, process.env.JWT_SECRET, { expiresIn });
+  return jwt.sign(payload, process.env.JWT_SECRET, {
+    expiresIn: '24h'
+  });
 };
 
 // Generate verification token

@@ -1,0 +1,363 @@
+{
+	"info": {
+		"_postman_id": "e5f3b0a0-5b1a-4b0e-8b0a-5b1a4b0e8b0a",
+		"name": "Nodo.ia - Listings",
+		"description": "API collection for Nodo.ia listing management",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Create Listing",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{authToken}}",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "title",
+							"value": "My Test Listing",
+							"description": "Title of the listing (3-100 characters)",
+							"type": "text"
+						},
+						{
+							"key": "description",
+							"value": "This is a great product in excellent condition. Perfect for anyone looking for quality and reliability.",
+							"description": "Description of the listing (3-5000 characters)",
+							"type": "text"
+						},
+						{
+							"key": "price",
+							"value": "299.99",
+							"description": "Price (must be greater than 0)",
+							"type": "text"
+						},
+						{
+							"key": "currency",
+							"value": "USD",
+							"description": "Currency code (USD, DOP, or EUR)",
+							"type": "text"
+						},
+						{
+							"key": "category",
+							"value": "electronics",
+							"description": "Category (electronics, automotive, real_estate, furniture, services, other)",
+							"type": "text"
+						},
+						{
+							"key": "address",
+							"value": "123 Main Street, City, Country",
+							"description": "Full address (5-255 characters)",
+							"type": "text"
+						},
+						{
+							"key": "phone",
+							"value": "+1234567890",
+							"description": "Contact phone number",
+							"type": "text"
+						},
+						{
+							"key": "email",
+							"value": "contact@example.com",
+							"description": "Contact email",
+							"type": "text"
+						},
+						{
+							"key": "whatsapp",
+							"value": "+1234567890",
+							"description": "WhatsApp number (optional)",
+							"type": "text"
+						},
+						{
+							"key": "tags",
+							"value": "electronics,gadget,new",
+							"description": "Comma-separated tags (max 10, alphanumeric with hyphens and underscores)",
+							"type": "text"
+						},
+						{
+							"key": "status",
+							"value": "active",
+							"description": "Either 'active' or 'inactive'",
+							"type": "text"
+						},
+						{
+							"key": "images",
+							"type": "file",
+							"description": "Image files (jpg, jpeg, png, webp - max 5MB each)",
+							"src": []
+						}
+					]
+				},
+				"url": {
+					"raw": "{{baseUrl}}/listings",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"listings"
+					]
+				},
+				"description": "Create a new listing with images and details. Required fields: title, description (3+ chars), price, category, address, and at least one contact method."
+			}
+		},
+		{
+			"name": "Get All Listings",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/listings?category=automotive&minPrice=20000&maxPrice=50000&page=1&limit=10",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"listings"
+					],
+					"query": [
+						{
+							"key": "category",
+							"value": "automotive",
+							"description": "Filter by category"
+						},
+						{
+							"key": "minPrice",
+							"value": "20000",
+							"description": "Minimum price"
+						},
+						{
+							"key": "maxPrice",
+							"value": "50000",
+							"description": "Maximum price"
+						},
+						{
+							"key": "page",
+							"value": "1",
+							"description": "Page number"
+						},
+						{
+							"key": "limit",
+							"value": "10",
+							"description": "Items per page"
+						}
+					]
+				},
+				"description": "Get all listings with optional filters and pagination"
+			}
+		},
+		{
+			"name": "Get Single Listing",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/listings/{{listingId}}",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"listings",
+						"{{listingId}}"
+					]
+				},
+				"description": "Get details of a specific listing"
+			}
+		},
+		{
+			"name": "Update Listing",
+			"request": {
+				"method": "PUT",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{authToken}}",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "title",
+							"value": "Updated Listing Title",
+							"description": "Title of the listing (3-100 characters)",
+							"type": "text"
+						},
+						{
+							"key": "description",
+							"value": "Updated product description with detailed information about features and condition.",
+							"description": "Description of the listing (3-5000 characters)",
+							"type": "text"
+						},
+						{
+							"key": "price",
+							"value": "399.99",
+							"description": "Price (must be greater than 0)",
+							"type": "text"
+						},
+						{
+							"key": "address",
+							"value": "456 New Street, City, Country",
+							"description": "Full address (5-255 characters)",
+							"type": "text"
+						},
+						{
+							"key": "phone",
+							"value": "+1987654321",
+							"description": "Contact phone number",
+							"type": "text"
+						},
+						{
+							"key": "email",
+							"value": "new.contact@example.com",
+							"description": "Contact email",
+							"type": "text"
+						},
+						{
+							"key": "tags",
+							"value": "electronics,updated,premium",
+							"description": "Comma-separated tags (max 10, alphanumeric with hyphens and underscores)",
+							"type": "text"
+						},
+						{
+							"key": "status",
+							"value": "active",
+							"description": "Either 'active' or 'inactive'",
+							"type": "text"
+						},
+						{
+							"key": "replaceImages",
+							"value": "true",
+							"description": "Set to true to replace all images, false to append new ones",
+							"type": "text"
+						},
+						{
+							"key": "images",
+							"type": "file",
+							"description": "Image files (jpg, jpeg, png, webp - max 5MB each)",
+							"src": []
+						}
+					]
+				},
+				"url": {
+					"raw": "{{baseUrl}}/listings/{{listingId}}",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"listings",
+						"{{listingId}}"
+					]
+				},
+				"description": "Update an existing listing. Only include the fields you want to update. For images, use replaceImages=true to replace all images or false/omit to append new ones."
+			}
+		},
+		{
+			"name": "Delete Listing",
+			"request": {
+				"method": "DELETE",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{authToken}}",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "{{baseUrl}}/listings/{{listingId}}",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"listings",
+						"{{listingId}}"
+					]
+				},
+				"description": "Soft delete a listing (changes status to deleted)"
+			}
+		},
+		{
+			"name": "Get Business Listings",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/listings/business/{{businessId}}?page=1&limit=10&status=published",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"listings",
+						"business",
+						"{{businessId}}"
+					],
+					"query": [
+						{
+							"key": "page",
+							"value": "1",
+							"description": "Page number"
+						},
+						{
+							"key": "limit",
+							"value": "10",
+							"description": "Items per page"
+						},
+						{
+							"key": "status",
+							"value": "published",
+							"description": "Listing status filter"
+						}
+					]
+				},
+				"description": "Get all listings for a specific business"
+			}
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:3000/api",
+			"type": "string"
+		},
+		{
+			"key": "authToken",
+			"value": "your_auth_token_here",
+			"type": "string"
+		},
+		{
+			"key": "listingId",
+			"value": "your_listing_id_here",
+			"type": "string"
+		},
+		{
+			"key": "businessId",
+			"value": "your_business_id_here",
+			"type": "string"
+		}
+	]
+} 
