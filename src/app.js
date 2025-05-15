@@ -6,9 +6,7 @@ const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
-const path = require('path');
-const { initializeDatabase } = require('./db');
-const { verifyEmailConfig } = require('./utils/emailService');
+const { db, initializeTables } = require('./db');
 const routes = require('./routes');
 const stripeWebhookRoutes = require('./routes/stripeWebhook');
 const { createUploadDirectories } = require('./config/upload');
@@ -34,7 +32,7 @@ app.use((req, res, next) => {
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 
-// Enable CORS for all routes
+// Enable CORS
 const corsOptions = {
   origin: process.env.FRONTEND_URL || '*',
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -42,7 +40,6 @@ const corsOptions = {
   credentials: true,
   exposedHeaders: ['Content-Disposition', 'Cross-Origin-Resource-Policy']
 };
-
 app.use(cors(corsOptions));
 
 // Stripe webhook route (must be before other middleware)
@@ -60,6 +57,7 @@ app.use(helmet({
   }
 }));
 
+// Logging
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
 // Rate limiting
@@ -71,31 +69,37 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-// Compression middleware
+// Compression
 app.use(compression());
 
 // Health check endpoint
 app.get('/health', async (req, res) => {
   try {
-    // Check database connection
-    const { sequelize } = require('./db');
-    await sequelize.authenticate();
-    res.json({ status: 'healthy', database: 'connected' });
+    const result = await db.query('SELECT NOW()');
+    res.json({ 
+      status: 'healthy', 
+      database: 'connected',
+      timestamp: result[0].now
+    });
   } catch (error) {
-    res.status(503).json({ status: 'unhealthy', database: 'disconnected', error: error.message });
+    res.status(503).json({ 
+      status: 'unhealthy', 
+      database: 'disconnected', 
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Database connection failed'
+    });
   }
 });
 
-// Create necessary upload directories
+// Create upload directories
 createUploadDirectories();
 
-// Serve uploaded files
+// Serve static files
 app.use('/uploads', express.static('uploads'));
 
-// Register routes
+// API routes
 app.use('/api', routes);
 
-// Error handling middleware
+// Error handling
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err);
   res.status(500).json({
@@ -115,25 +119,25 @@ app.use((req, res) => {
 // Initialize app
 const initApp = async () => {
   try {
-    // Initialize database
-    await initializeDatabase();
-    
-    // Start verifying email configuration in the background
-    verifyEmailConfig().catch(error => {
-      console.error('Email configuration verification failed:', error);
-      // Don't throw error, let the app continue running
-    });
+    console.log('🚀 Initializing application...');
 
-    // Start cron jobs
+    // Initialize database tables (only in development)
+    if (process.env.NODE_ENV === 'development') {
+      await initializeTables();
+    }
+
+    // Start background jobs
+    console.log('⚙️ Starting background jobs...');
     startJobs();
     
+    console.log('✅ Application initialized successfully');
     return app;
   } catch (error) {
-    console.error('Failed to initialize app:', error);
-    throw error; // Throw error to prevent app from starting with failed database
+    console.error('❌ Failed to initialize app:', error);
+    // Log error but don't throw to allow graceful handling
+    return app;
   }
 };
 
-module.exports = {
-  initApp
-}; 
+// Export the app
+module.exports = { initApp }; 

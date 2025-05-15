@@ -5,21 +5,21 @@ const path = require('path');
 const Sequelize = require('sequelize');
 const process = require('process');
 const env = process.env.NODE_ENV || 'development';
-const config = require('../config/database')[env];
+const config = require('../config/sequelize')[env];
 
 const db = {};
 
 let sequelize;
-if (config.use_env_variable) {
-  sequelize = new Sequelize(process.env[config.use_env_variable], {
+if (process.env.DATABASE_URL) {
+  sequelize = new Sequelize(process.env.DATABASE_URL, {
     ...config,
     dialectOptions: {
       ssl: {
         require: true,
         rejectUnauthorized: false
+      }
     }
-  }
-});
+  });
 } else {
   sequelize = new Sequelize(
     config.database,
@@ -56,21 +56,21 @@ Object.values(db).forEach(model => {
 const initializeDatabase = async () => {
   try {
     await sequelize.authenticate();
-    console.log('Database connection established successfully.');
+    console.log('Business database connection established successfully.');
 
     // In development, force sync to recreate all tables
     if (process.env.NODE_ENV !== 'production') {
       await sequelize.sync({ force: true });
-      console.log('Database tables dropped and recreated.');
+      console.log('Business database tables dropped and recreated.');
     } else {
       // In production, just sync without forcing
       await sequelize.sync();
-      console.log('Database models synchronized.');
+      console.log('Business database models synchronized.');
     }
 
     return true;
   } catch (error) {
-    console.error('Database initialization error:', error);
+    console.error('Business database initialization error:', error);
     throw error;
   }
 };
