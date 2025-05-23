@@ -1,48 +1,19 @@
-const express = require('express');
-const { initDb } = require('./db');
-const { router: queryRoutes } = require('./routes/query');
-const { router: authRoutes } = require('./routes/auth');
-const { router: historyRoutes } = require('./routes/history');
 require('dotenv').config();
+const { initApp } = require('./app');
 
-// Initialize database
-initDb().then(() => {
-  // Create Express app
-  const app = express();
-  const PORT = process.env.PORT || 3000;
-  
-  // Middleware
-  app.use(express.json());
-  
-  // Routes
-  app.use('/query', queryRoutes);
-  app.use('/auth', authRoutes);
-  app.use('/history', historyRoutes);
-  
-  // Basic health check endpoint
-  app.get('/health', (req, res) => {
-    res.json({ status: 'ok' });
-  });
-  
-  // Simple home route
-  app.get('/', (req, res) => {
-    res.json({ 
-      message: 'Vehicle NLP Query API with Dominican Assistant',
-      endpoints: {
-        '/query': 'POST - Process any natural language query (vehicles or Dominican topics)',
-        '/query/clear-cache': 'POST - Clear caches',
-        '/auth': 'Authentication endpoints including Apple Sign In',
-        '/history': 'User search history and favorites (requires authentication)',
-        '/health': 'GET - Check API health'
-      }
+const startServer = async () => {
+  try {
+    const app = await initApp();
+    const port = process.env.PORT || 3000;
+
+    app.listen(port, () => {
+      console.log(`🚀 Server is running on port ${port}`);
     });
-  });
-  
-  // Start server
-  app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-  });
-}).catch(err => {
-  console.error('Failed to start server:', err);
-  process.exit(1);
-}); 
+  } catch (error) {
+    console.error('Failed to start server:', error);
+    process.exit(1);
+  }
+};
+
+// Start the server
+startServer(); 

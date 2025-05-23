@@ -6,19 +6,19 @@ const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
-const { db, initializeTables } = require('./db');
+const { db, initializeDatabase } = require('./db');
 const routes = require('./routes');
 const stripeWebhookRoutes = require('./routes/stripeWebhook');
 const { createUploadDirectories } = require('./config/upload');
 const { startJobs } = require('./jobs');
+const authRoutes = require('./routes/auth');
+const chatRoutes = require('./routes/chat');
 
 // Initialize Express app
 const app = express();
 
-// Set trust proxy if behind a proxy
-if (process.env.NODE_ENV === 'production') {
-  app.set('trust proxy', 1);
-}
+// Enable trust proxy - this is needed when behind a reverse proxy
+app.set('trust proxy', true);
 
 // Regular middleware for all routes except webhooks
 app.use((req, res, next) => {
@@ -65,7 +65,18 @@ const limiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
   max: parseInt(process.env.RATE_LIMIT_MAX) || 100,
   standardHeaders: true,
-  legacyHeaders: false
+  legacyHeaders: false,
+  trustProxy: 1, // Only trust first proxy
+  skip: (req) => req.path === '/health', // Skip rate limiting for health checks
+  keyGenerator: (req) => {
+    // Use X-Forwarded-For header if available, otherwise use IP
+    const forwardedFor = req.headers['x-forwarded-for'];
+    if (forwardedFor) {
+      // Get the first IP in the chain (client IP)
+      return forwardedFor.split(',')[0].trim();
+    }
+    return req.ip;
+  }
 });
 app.use('/api/', limiter);
 
@@ -98,6 +109,8 @@ app.use('/uploads', express.static('uploads'));
 
 // API routes
 app.use('/api', routes);
+app.use('/auth', authRoutes);
+app.use('/chat', chatRoutes);
 
 // Error handling
 app.use((err, req, res, next) => {
@@ -121,10 +134,8 @@ const initApp = async () => {
   try {
     console.log('🚀 Initializing application...');
 
-    // Initialize database tables (only in development)
-    if (process.env.NODE_ENV === 'development') {
-      await initializeTables();
-    }
+    // Initialize database
+    await initializeDatabase();
 
     // Start background jobs
     console.log('⚙️ Starting background jobs...');

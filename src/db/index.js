@@ -1,9 +1,64 @@
 'use strict';
 
+const { Sequelize } = require('sequelize');
 const { pool } = require('../config/database');
+const UserModel = require('./models/user');
+
+// Initialize Sequelize
+const sequelize = new Sequelize(process.env.DATABASE_URL, {
+  dialect: 'postgres',
+  logging: process.env.NODE_ENV === 'development' ? console.log : false,
+  pool: {
+    max: 5,
+    min: 0,
+    acquire: 30000,
+    idle: 10000
+  }
+});
+
+// Initialize models
+const User = UserModel(sequelize);
+
+// Force sync in development
+const forceSync = process.env.NODE_ENV === 'development' && process.env.FORCE_SYNC === 'true';
+
+// Test the connection and sync models
+const initializeDatabase = async () => {
+  try {
+    // Test connection
+    await sequelize.authenticate();
+    console.log('✅ Sequelize database connection established successfully.');
+
+    // Sync all models
+    console.log('📦 Syncing database models...');
+    if (forceSync) {
+      console.log('⚠️ Force syncing database (this will drop existing tables!)');
+      await sequelize.sync({ force: true });
+    } else {
+      await sequelize.sync({ alter: true });
+    }
+    console.log('✅ Database models synced successfully');
+
+    // Verify User model is working
+    try {
+      await User.findOne({ limit: 1 });
+      console.log('✅ User model verified');
+    } catch (error) {
+      console.error('❌ User model verification failed:', error);
+      throw error;
+    }
+
+    return true;
+  } catch (error) {
+    console.error('❌ Database initialization failed:', error);
+    throw error;
+  }
+};
 
 // Database helper functions
 const db = {
+  sequelize,
+  User,
   async query(text, params) {
     try {
       const result = await pool.query(text, params);
@@ -77,101 +132,10 @@ const db = {
   }
 };
 
-// Initialize tables if they don't exist (only in development)
-const initializeTables = async () => {
-  if (process.env.NODE_ENV === 'development') {
-    try {
-      console.log('📦 Creating database tables if they don\'t exist...');
-
-      // Create vehicles table
-      await db.query(`
-        CREATE TABLE IF NOT EXISTS vehicles (
-          id SERIAL PRIMARY KEY,
-          hid VARCHAR(32) UNIQUE,
-          brand VARCHAR(255),
-          model VARCHAR(255),
-          engine VARCHAR(255),
-          year VARCHAR(255),
-          condition VARCHAR(255),
-          price VARCHAR(255),
-          price_value INTEGER,
-          transmission VARCHAR(255),
-          fuel VARCHAR(255),
-          dealer VARCHAR(255),
-          dealer_telephone TEXT,
-          location TEXT,
-          address TEXT,
-          accessories TEXT,
-          coordinates TEXT,
-          detail_url TEXT,
-          images_url TEXT,
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-      `);
-      console.log('✅ Vehicles table ready');
-
-      // Create products table
-      await db.query(`
-        CREATE TABLE IF NOT EXISTS products (
-          id SERIAL PRIMARY KEY,
-          hid VARCHAR(32) UNIQUE,
-          category VARCHAR(255),
-          title VARCHAR(255),
-          description_text TEXT,
-          availability VARCHAR(255),
-          price VARCHAR(255),
-          price_value INTEGER,
-          availability_in_clubs TEXT,
-          delivery_options TEXT,
-          specifications TEXT,
-          detail_url TEXT,
-          images_url TEXT,
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-      `);
-      console.log('✅ Products table ready');
-
-      // Create real_estate table
-      await db.query(`
-        CREATE TABLE IF NOT EXISTS real_estate (
-          id SERIAL PRIMARY KEY,
-          hid VARCHAR(32) UNIQUE,
-          title TEXT,
-          price TEXT,
-          price_value INTEGER,
-          bedroom TEXT,
-          bathroom TEXT,
-          area TEXT,
-          parking TEXT,
-          agent TEXT,
-          agent_telephone TEXT,
-          broker TEXT,
-          broker_telephone TEXT,
-          location TEXT,
-          specifications TEXT,
-          description_text TEXT,
-          images_url TEXT,
-          detail_url TEXT,
-          source VARCHAR(100),
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-      `);
-      console.log('✅ Real Estate table ready');
-
-      console.log('✅ All database tables initialized successfully');
-    } catch (error) {
-      console.error('❌ Error initializing tables:', error);
-      // Log error but don't throw to prevent app crash
-    }
-  }
-};
-
 // Export database interface
 module.exports = {
-  db,
+  db: sequelize,
+  User,
   pool,
-  initializeTables
+  initializeDatabase
 };

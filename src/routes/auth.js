@@ -4,6 +4,8 @@ const { User } = require('../db');
 const { verifyAppleToken, exchangeAppleCodeForTokens } = require('../utils/appleAuth');
 const { generateToken } = require('../middleware/auth');
 const { v4: uuidv4 } = require('uuid');
+const authController = require('../controllers/authController');
+const { authenticateToken } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -248,4 +250,13 @@ router.get('/verify', async (req, res) => {
   }
 });
 
-module.exports = { router }; 
+// Apple Sign In
+router.post('/apple/signin', authController.appleSignIn);
+
+// Refresh token
+router.post('/refresh-token', authController.refreshToken);
+
+// Logout (requires authentication)
+router.post('/logout', authenticateToken, authController.logout);
+
+module.exports = router; 
